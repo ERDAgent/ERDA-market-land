@@ -1,7 +1,7 @@
 /**
  * Full §9 fly controls: pointer lock (click), Esc releases, drag-to-look
  * fallback for touch, WASD on camera basis, Space/C world up/down, Shift sprint
- * x3, scroll wheel base-speed 4–60 (default 15), delta-time damped movement
+ * x3, scroll wheel base-speed 10–120 (default 30), delta-time damped movement
  * (accel 40 u/s^2, friction 8/s), world clamps (y in [1.5,400], horiz <= 700
  * soft push-back), spawn (0,80,260) facing origin.
  *
@@ -41,9 +41,17 @@ export function createFlyControls(
   const keys: Record<string, boolean> = Object.create(null);
   let yaw = 0;
   let pitch = 0;
-  let baseSpeed = 15;
+  let baseSpeed = 30;
   let sprinting = false;
   let locked = false;
+
+  // Stuck-key guard: any focus/visibility/lock transition that could swallow a
+  // `keyup` (alt-tab, pointer-lock release, tab switch) snap-clears the input
+  // state so a held descend/ascend/move can no longer run away.
+  const clearKeys = (): void => {
+    for (const k in keys) delete keys[k];
+    sprinting = false;
+  };
 
   // Persistent scratch (allocated ONCE here, reused every frame — no per-frame alloc).
   const velocity = new THREE.Vector3();
@@ -95,9 +103,9 @@ export function createFlyControls(
   const onWheel = (e: WheelEvent): void => {
     if (isInputFocused()) return;
     e.preventDefault();
-    baseSpeed -= Math.sign(e.deltaY) * 2;
-    if (baseSpeed < 4) baseSpeed = 4;
-    if (baseSpeed > 60) baseSpeed = 60;
+    baseSpeed -= Math.sign(e.deltaY) * 4;
+    if (baseSpeed < 10) baseSpeed = 10;
+    if (baseSpeed > 120) baseSpeed = 120;
     ctxApi.speedHud.speed = baseSpeed;
     ctxApi.speedHud.until = performance.now() + 1100;
   };
@@ -114,6 +122,13 @@ export function createFlyControls(
 
   const onLockChange = (): void => {
     locked = document.pointerLockElement === dom;
+    if (!locked) clearKeys();
+  };
+
+  const onBlur = (): void => clearKeys();
+
+  const onVisibilityChange = (): void => {
+    if (document.visibilityState === 'hidden') clearKeys();
   };
 
   const onContextMenu = (e: Event): void => e.preventDefault();
@@ -149,6 +164,8 @@ export function createFlyControls(
       dom.addEventListener('pointermove', onPointerDrag);
       dom.addEventListener('contextmenu', onContextMenu);
       document.addEventListener('pointerlockchange', onLockChange);
+      window.addEventListener('blur', onBlur);
+      document.addEventListener('visibilitychange', onVisibilityChange);
     },
     update(dt: number, _ctx: EngineContext) {
       const speed = sprinting ? baseSpeed * 3 : baseSpeed;
@@ -213,6 +230,8 @@ export function createFlyControls(
       dom.removeEventListener('pointermove', onPointerDrag);
       dom.removeEventListener('contextmenu', onContextMenu);
       document.removeEventListener('pointerlockchange', onLockChange);
+      window.removeEventListener('blur', onBlur);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
       if (document.pointerLockElement === dom) document.exitPointerLock();
     },
   };
