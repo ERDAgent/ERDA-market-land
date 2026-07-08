@@ -212,7 +212,11 @@ function refresh(market: ReturnType<typeof useMarketStore>): void {
     const inst = instById.get(id);
     const h = heightForMetric(metric, q.changePct, inst?.mcapUSD, q.price);
     setTarget(k, h);
-    writeColor(k, dayChangeColor(q.changePct));
+    // §5.3 market-closed styling: dim color saturation ×0.6 when the session
+    // is closed so the closed-market skyline reads visibly muted vs. live.
+    let rgb = dayChangeColor(q.changePct);
+    if (q.session === 'closed') rgb = dimSaturation(rgb, 0.6);
+    writeColor(k, rgb);
     touched = true;
   }
   if (touched) {
@@ -248,6 +252,16 @@ function writeColor(k: number, rgb: [number, number, number]): void {
 
 function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t;
+}
+
+const _hsl = { h: 0, s: 0, l: 0 };
+const _dimColor = new THREE.Color();
+/** Scale an [r,g,b] triple's saturation by `factor` (1 ⇒ unchanged, 0 ⇒ grey). */
+function dimSaturation(rgb: [number, number, number], factor: number): [number, number, number] {
+  _dimColor.setRGB(rgb[0], rgb[1], rgb[2]);
+  _dimColor.getHSL(_hsl);
+  _dimColor.setHSL(_hsl.h, _hsl.s * factor, _hsl.l);
+  return [_dimColor.r, _dimColor.g, _dimColor.b];
 }
 
 function makeApi(): BuildingsApi {

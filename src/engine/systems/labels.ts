@@ -75,15 +75,25 @@ function drawFull(c: HTMLCanvasElement, item: LabelItem): void {
   ctx.fillText(item.ticker, 12, 6);
   const q = item.lastQuote;
   if (!q) return;
-  // line 2 — price
-  ctx.fillStyle = '#9fb2c6';
+  // §8.3 stale styling: render price in grey + a small "stale" indicator.
+  const stale = q.stale === true;
+  // line 2 — price (grey when stale)
+  ctx.fillStyle = stale ? '#6b7683' : '#9fb2c6';
   ctx.font = '30px sans-serif';
   ctx.fillText(formatPrice(q.price), 12, 56);
-  // line 3 — signed change (green/red)
-  ctx.fillStyle = q.changePct >= 0 ? '#22c07a' : '#d64550';
+  // line 3 — signed change (green/red; grey when stale)
+  ctx.fillStyle = stale ? '#6b7683' : (q.changePct >= 0 ? '#22c07a' : '#d64550');
   ctx.fillText(formatChangePct(q.changePct), 12, 92);
-  // SIM badge
-  if (q.source === 'simulated') {
+  // stale badge (mirrors the SIM badge slot) so a glance spots stale data.
+  if (stale) {
+    ctx.fillStyle = '#8b8350';
+    ctx.font = '700 22px sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText('stale', CW - 10, 10);
+  }
+  // SIM badge (stale badge, if rendered above, already used the right-aligned
+  // slot; when both apply, SIM wins back the slot — it's the dominant signal).
+  if (q.source === 'simulated' && !stale) {
     ctx.fillStyle = '#4aa8ff';
     ctx.font = '700 22px sans-serif';
     const w = ctx.measureText('SIM').width;
