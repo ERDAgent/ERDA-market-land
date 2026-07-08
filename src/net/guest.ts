@@ -1,17 +1,23 @@
 // src/net/guest.ts — guest session: offerer side of the manual handshake,
-// welcome hydration, chat/pos receive + local pos broadcast (12 Hz), and the
-// host-disconnect → [Continue solo] banner.
+// welcome hydration, chat/pos receive, and the host-disconnect → [Continue
+// solo] banner.
+//
+// Local pos broadcast is driven by M4's avatars bridge, which owns the 12 Hz
+// move-gate and calls the shared `sendLocalPos(p,q)` hook (defined in
+// net/host.ts, role-routed). The guest-side dispatch this module exports is
+// `_dispatchGuestPos(env)` — it pushes a built `pos` env onto this guest's own
+// `CH_POS` so the host receives + relays to the other guests. There is no
+// guest-side setInterval reading engine.camera anymore (that gate is M4's).
 //
 // Guest is the offerer; it creates BOTH data channels before `createOffer`
 // (§4.2). `hello.ver = PROTOCOL_VERSION`; a host mismatch is signalled back as
 // `error {code:'VERSION'}` and the guest shows a friendly message. On `welcome`
 // it hydrates roster + chat tail + hostName. Received `pos` Envs emit
 // `engine.events` `'remotePos'` (M4 hook).
-import { engine } from '../engine/core';
 import { instruments } from '../data/manifest/validate';
 import { fnv1aHex } from '../utils/fnv1a';
 import {
-  CHAT_TAIL, PING_MS, POS_HZ, PROTOCOL_VERSION,
+  CHAT_TAIL, PING_MS, PROTOCOL_VERSION,
 } from '../config/net';
 import type { Env, MsgPayload, PeerInfo } from './protocol';
 import {
@@ -31,8 +37,7 @@ let rel: RTCDataChannel | null = null;
 let pos: RTCDataChannel | null = null;
 let selfId = '';
 let pingTimer: number | undefined;
-let posTimer: number | undefined;
-let posSeq = 0;
+let posTimer: number | undefined; // unused now (M4 drives cadence); kept for teardown idiom
 
 function parseJson(data: unknown): unknown {
   if (typeof data !== 'string') return null;
@@ -99,10 +104,6 @@ function sendRel(env: Env): void {
   if (channelOpen(rel)) { try { rel!.send(encodeWire(env)); } catch { /* */ } }
 }
 
-function sendPos(env: Env): void {
-  if (channelOpen(pos)) { try { pos!.send(encodeWire(env)); } catch { /* unreliable */ } }
-}
-
 function handleRel(raw: unknown): void {
   const env = parseEnv(raw);
   if (!env) return;
@@ -131,7 +132,8 @@ function handleRel(raw: unknown): void {
       }
       conn.setPhase('connected');
       conn.setStatus('connected');
-      startPosStream();
+      // Local pos broadcast is now driven by M4's avatars bridge via
+      // `sendLocalPos(p,q)` (host.ts); no guest-side camera-reading timer.
       startPing();
       break;
     }
@@ -198,19 +200,16 @@ function handlePos(env: Env): void {
   emitRemotePos(env.from, d.p, d.q);
 }
 
-function startPosStream(): void {
-  stopPosStream();
-  posSeq = 0;
-  posTimer = window.setInterval(() => {
-    if (!channelOpen(pos)) return;
-    const cam = engine.camera;
-    sendPos(makeEnv('pos', selfId, {
-      p: [cam.position.x, cam.position.y, cam.position.z],
-      q: [cam.quaternion.x, cam.quaternion.y, cam.quaternion.z, cam.quaternion.w],
-    }));
-    posSeq += 1;
-  }, 1000 / POS_HZ);
+/** Push an already-built `pos` env onto this guest's own `CH_POS` so the host
+ *  receives + relays it to the other guests. Called by the role-routed
+ *  `sendLocalPos(p,q)` (host.ts) on the guest path. M4 owns the move-gate; this
+ *  sends every call it receives (no second gate, no camera read). */
+export function _dispatchGuestPos(env: Env<'pos'>): void {
+  if (channelOpen(pos)) { try { pos!.send(encodeWire(env)); } catch { /* unreliable */ } }
 }
+
+/** Test-only seam: install a fake `pos` channel into the guest module state. */
+export function _testInstallGuestPos(ch: RTCDataChannel | null): void { pos = ch; }
 
 function stopPosStream(): void {
   if (posTimer !== undefined) { window.clearInterval(posTimer); posTimer = undefined; }
