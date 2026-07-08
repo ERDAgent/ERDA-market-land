@@ -2,6 +2,9 @@
 import { computed } from 'vue';
 import { useSettingsStore } from '../stores/settings';
 import { useUiStore } from '../stores/ui';
+import { VERSION_STRING } from '../version';
+
+const versionString = VERSION_STRING;
 
 const settings = useSettingsStore();
 const ui = useUiStore();
@@ -62,6 +65,7 @@ function openHelp(): void {
       <div class="footer">
         <a class="link" role="button" tabindex="0" @click="openHelp" @keydown.enter="openHelp">Help
           (controls · privacy · NAT)</a>
+        <span class="version">{{ versionString }}</span>
       </div>
     </div>
   </div>
@@ -164,5 +168,12 @@ button {
 .link {
   font-size: 0.85rem;
   color: var(--accent);
+}
+.version {
+  display: block;
+  margin-top: 0.5rem;
+  font-size: 0.7rem;
+  font-family: var(--mono);
+  color: var(--text-dim);
 }
 </style>

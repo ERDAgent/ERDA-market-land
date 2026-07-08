@@ -15,6 +15,7 @@ import WorldCanvas from '../components/WorldCanvas.vue';
 import { useHotkeys } from '../composables/useHotkeys';
 import { useUiStore } from '../stores/ui';
 import { engine, type EngineStats } from '../engine/core';
+import { VERSION_STRING } from '../version';
 
 useHotkeys();
 
@@ -84,6 +85,7 @@ function backToMenu(): void {
       <div>systems {{ stats.systems }}</div>
       <div>peers {{ stats.peers }}</div>
       <div>data {{ Math.round(stats.dataBudgetPct) }}%</div>
+      <div>{{ VERSION_STRING }}</div>
     </div>
 
     <!-- Speed HUD (briefly after scroll). -->
