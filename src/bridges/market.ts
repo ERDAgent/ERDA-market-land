@@ -15,6 +15,7 @@ import { watch, type WatchStopHandle } from 'vue';
 import { useMarketStore } from '../stores/market';
 import { useUiStore } from '../stores/ui';
 import { useSettingsStore } from '../stores/settings';
+import { useConnectionStore } from '../stores/connection';
 import { startScheduler } from '../data/scheduler';
 import type { Quote } from '../net/protocol';
 import type { HeightMetric } from '../config/metrics';
@@ -73,7 +74,17 @@ export default function marketBridge(engine: EngineLike): void {
 
   stopWatches = [unsubQuotes, unsubMetric, () => offPick()];
 
-  // --- start the local scheduler (solo at M1; no networking) ------------------
+  // --- role-guard: guests never fetch (§5 / §16). The scheduler runs ONLY on
+  //     host/solo; a guest's market store is populated over the wire by M3's
+  //     welcome + M5's quotes-broadcast bridge. Skipping startScheduler here
+  //     means the providers (CoinGecko/Finnhub/Simulated) never instantiate on
+  //     a guest ⇒ zero outbound API calls from a guest tab. ---
+  if (useConnectionStore().role === 'guest') {
+    installed = true;
+    return;
+  }
+
+  // --- start the local scheduler (solo/host only; no networking) --------------
   startScheduler({
     onDelta: (qs: Quote[]) => {
       market.applyDelta(qs);

@@ -19,7 +19,7 @@ import { fnv1aHex } from '../utils/fnv1a';
 import {
   CHAT_TAIL, PING_MS, PROTOCOL_VERSION,
 } from '../config/net';
-import type { Env, MsgPayload, PeerInfo } from './protocol';
+import type { Env, MsgPayload, PeerInfo, Quote } from './protocol';
 import {
   channelOpen, createOffererChannels, createPeerConnection,
   encodeWire, localDescriptionInit, makeEnv, waitForIceGathering,
@@ -27,6 +27,7 @@ import {
 import { decodeSignal, encodeSignal, SignalError } from './signaling';
 import { clampChatText, isChatPayload, isPosPayload, isSysPayload, parseEnv } from './validate';
 import { emitRemotePos, hostInit } from './host';
+import { engine } from '../engine/core';
 import { useConnectionStore } from '../stores/connection';
 import { useChatStore } from '../stores/chat';
 import { useSettingsStore } from '../stores/settings';
@@ -132,6 +133,11 @@ function handleRel(raw: unknown): void {
       }
       conn.setPhase('connected');
       conn.setStatus('connected');
+      // M5G receive leg: apply the host's welcome snapshot of quotes over the
+      // wire via the frozen `engine.api.market` seam (no static M1 store import).
+      // Optional chaining ⇒ no crash if the seam is absent (merge-order safe).
+      (engine.api as { market?: { applyFull?: (q: Quote[]) => void } })
+        .market?.applyFull?.(d.quotes ?? []);
       // Local pos broadcast is now driven by M4's avatars bridge via
       // `sendLocalPos(p,q)` (host.ts); no guest-side camera-reading timer.
       startPing();
@@ -161,9 +167,18 @@ function handleRel(raw: unknown): void {
       // M1/M5 consume the full roster downstream; M3 only notes its arrival.
       break;
     }
-    case 'quotesDelta':
+    case 'quotesDelta': {
+      // M5G receive leg: host→all delta fan-out (changed quotes only).
+      const d = env.d as MsgPayload['quotesDelta'];
+      (engine.api as { market?: { applyDelta?: (q: Quote[]) => void } })
+        .market?.applyDelta?.(d.quotes ?? []);
+      break;
+    }
     case 'quotesFull': {
-      // M5 owns quotes; M3 ignores here (no market store import).
+      // M5G receive leg: periodic full resync from the host.
+      const d = env.d as MsgPayload['quotesFull'];
+      (engine.api as { market?: { applyFull?: (q: Quote[]) => void } })
+        .market?.applyFull?.(d.quotes ?? []);
       break;
     }
     case 'ping': {
@@ -210,6 +225,10 @@ export function _dispatchGuestPos(env: Env<'pos'>): void {
 
 /** Test-only seam: install a fake `pos` channel into the guest module state. */
 export function _testInstallGuestPos(ch: RTCDataChannel | null): void { pos = ch; }
+
+/** Test-only seam: drive the module-private `handleRel` from a test (M5G).
+ *  Never call from production paths. */
+export function _testHandleRelEnv(raw: unknown): void { handleRel(raw); }
 
 function stopPosStream(): void {
   if (posTimer !== undefined) { window.clearInterval(posTimer); posTimer = undefined; }

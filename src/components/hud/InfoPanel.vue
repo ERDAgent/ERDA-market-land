@@ -59,7 +59,13 @@ const lastUpdated = computed(() => {
 
     <dl>
       <div class="row"><dt>District</dt><dd>{{ districtLabel(instrument.district) }}</dd></div>
-      <div class="row"><dt>Price</dt><dd>{{ quote ? formatPrice(quote.price) : '—' }}</dd></div>
+      <div class="row">
+        <dt>Price</dt>
+        <dd>
+          {{ quote ? formatPrice(quote.price) : '—' }}
+          <span v-if="quote?.session === 'closed'" class="closed-note">market closed — last price</span>
+        </dd>
+      </div>
       <div class="row">
         <dt>Day %</dt>
         <dd :class="quote && quote.changePct >= 0 ? 'pos' : 'neg'">
@@ -165,6 +171,13 @@ dl { margin: 0; }
   margin-left: 0.3rem;
   font-size: 0.72rem;
   color: var(--text-dim);
+}
+.closed-note {
+  display: block;
+  margin-top: 0.2rem;
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  font-style: italic;
 }
 
 .note {

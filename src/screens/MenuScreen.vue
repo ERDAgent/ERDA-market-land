@@ -15,6 +15,21 @@ function startSolo(): void {
   ui.screen = 'world';
 }
 
+// M5G menu wiring: enter the world screen and set a one-shot TopBar honors to
+// open SignalingModal in the requested mode. Role assignment stays owned by
+// hostInit/guestBeginJoin inside SignalingModal (TopBar's openInvite/openJoin).
+function startHost(): void {
+  if (!canStartSolo.value) return;
+  ui.setPendingMode('host');
+  ui.screen = 'world';
+}
+
+function startJoin(): void {
+  if (!canStartSolo.value) return;
+  ui.setPendingMode('guest');
+  ui.screen = 'world';
+}
+
 function openHelp(): void {
   ui.modals.help = true;
 }
@@ -40,8 +55,8 @@ function openHelp(): void {
 
       <div class="row">
         <button class="primary" :disabled="!canStartSolo" @click="startSolo">Start Solo</button>
-        <button class="ghost" disabled title="Added by M3 (Networking core)">Host a Room</button>
-        <button class="ghost" disabled title="Added by M3 (Networking core)">Join a Room</button>
+        <button class="ghost" :disabled="!canStartSolo" @click="startHost">Host a Room</button>
+        <button class="ghost" :disabled="!canStartSolo" @click="startJoin">Join a Room</button>
       </div>
 
       <div class="footer">
