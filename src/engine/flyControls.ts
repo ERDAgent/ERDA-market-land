@@ -1,7 +1,7 @@
 /**
  * Full §9 fly controls: pointer lock (click), Esc releases, drag-to-look
  * fallback for touch, WASD on camera basis, Space/C world up/down, Shift sprint
- * x3, scroll wheel base-speed 10–120 (default 30), delta-time damped movement
+ * x4, scroll wheel base-speed 10–200 (default 45), delta-time damped movement
  * (accel 40 u/s^2, friction 8/s), world clamps (y in [1.5,400], horiz <= 700
  * soft push-back), spawn (0,80,260) facing origin.
  *
@@ -41,7 +41,7 @@ export function createFlyControls(
   const keys: Record<string, boolean> = Object.create(null);
   let yaw = 0;
   let pitch = 0;
-  let baseSpeed = 30;
+  let baseSpeed = 45;
   let sprinting = false;
   let locked = false;
 
@@ -105,7 +105,7 @@ export function createFlyControls(
     e.preventDefault();
     baseSpeed -= Math.sign(e.deltaY) * 4;
     if (baseSpeed < 10) baseSpeed = 10;
-    if (baseSpeed > 120) baseSpeed = 120;
+    if (baseSpeed > 200) baseSpeed = 200;
     ctxApi.speedHud.speed = baseSpeed;
     ctxApi.speedHud.until = performance.now() + 1100;
   };
@@ -168,7 +168,7 @@ export function createFlyControls(
       document.addEventListener('visibilitychange', onVisibilityChange);
     },
     update(dt: number, _ctx: EngineContext) {
-      const speed = sprinting ? baseSpeed * 3 : baseSpeed;
+      const speed = sprinting ? baseSpeed * 4 : baseSpeed;
       let f = 0;
       let r = 0;
       let u = 0;

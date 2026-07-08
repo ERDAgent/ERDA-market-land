@@ -26,6 +26,14 @@ import { useSettingsStore } from '../../stores/settings';
 export type CoingeckoStatus = 'ok' | 'rate-limited' | 'down' | 'no-key';
 
 const COINGECKO_BASE = 'https://api.coingecko.com/api/v3/coins/markets';
+
+// ---- Admiral's diagnostic surface -------------------------------------------
+// Console logs tagged `eml:coingecko` are the Admiral's DevTools window into
+// the (sparse, once-per-60s) crypto batch. `{@code →}` before the fetch, `{@code ←}`
+// on a 2xx with the quote count, `{@code ✗}` on every failure (429 / non-ok /
+// network / parse / non-array). Coingecko needs no key, so no redaction here;
+// never log a key value regardless. Do not delete in a future refactor — this
+// is a diagnostic, not telemetry.
 /** Exponential-backoff cap (§5.2: 2×, cap 10 min). */
 const BACKOFF_CAP_MS = 10 * 60_000;
 /** Stale-after-N-fails (§5.2: surface consecutive-failure count → stale after 3). */
@@ -116,20 +124,24 @@ class CoingeckoProvider implements QuoteProvider {
     const url =
       `${COINGECKO_BASE}?vs_currency=usd&ids=${encodeURIComponent(ids)}` +
       `&price_change_percentage=24h`;
+    console.log(`[eml:coingecko] \u2192 GET markets (${cryptoBatch.length} ids)`);
 
     let resp: Response;
     try {
       resp = await fetch(url, { cache: 'no-store' });
     } catch {
+      console.warn('[eml:coingecko] \u2717 HTTP - network error');
       return this.onFailure(cryptoBatch);
     }
 
     if (resp.status === 429) {
+      console.warn('[eml:coingecko] \u2717 HTTP 429 rate-limited');
       this.bumpBackoff();
       this._status = 'rate-limited';
       return this.emitStaleKnown(cryptoBatch);
     }
     if (!resp.ok) {
+      console.warn(`[eml:coingecko] \u2717 HTTP ${resp.status} http error`);
       return this.onFailure(cryptoBatch);
     }
 
@@ -137,9 +149,11 @@ class CoingeckoProvider implements QuoteProvider {
     try {
       json = await resp.json();
     } catch {
+      console.warn(`[eml:coingecko] \u2717 HTTP ${resp.status} bad json`);
       return this.onFailure(cryptoBatch);
     }
     if (!Array.isArray(json)) {
+      console.warn(`[eml:coingecko] \u2717 HTTP ${resp.status} no data`);
       return this.onFailure(cryptoBatch);
     }
 
@@ -169,6 +183,7 @@ class CoingeckoProvider implements QuoteProvider {
       this.backoffMs = COINGECKO_INTERVAL_MS;
       this.retryAfter = 0;
       this._status = 'ok';
+      console.log(`[eml:coingecko] \u2190 HTTP ${resp.status} (n=${out.length})`);
     } else {
       return this.onFailure(cryptoBatch);
     }

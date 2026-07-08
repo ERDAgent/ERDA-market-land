@@ -110,6 +110,10 @@ export class Scheduler {
     // populate before the first 5s cadence elapses. Flush as soon as the
     // quotes land (allow the next frame's coalesced flush).
     this.tickLane(SIM_TICK_MS);
+    // Prime the Finnhub drip lane too, so a host/solo with a valid key fetches
+    // the FIRST equity right at world-mount (no FINNHUB_DRIP_MS delay). The
+    // interval table still gates the *next* drip one cadence after this prime.
+    this.tickLane(FINNHUB_DRIP_MS);
     this.lastFlush = this.lastNow - 1500;
     this.loop();
   }

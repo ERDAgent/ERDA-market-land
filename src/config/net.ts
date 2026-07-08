@@ -49,8 +49,9 @@ export const CHAT_MAX_CHARS = 500;
 // ----- Data budgets (§5) -----
 /** CoinGecko poll interval (ms). */
 export const COINGECKO_INTERVAL_MS = 60000;
-/** Finnhub drip interval (ms); ≈ 50 calls/min. */
-export const FINNHUB_DRIP_MS = 1200;
+/** Finnhub drip interval (ms); 20 calls/min (one equity every 3 s by the
+ *  Admiral's cadence call — well inside the FINNHUB_MAX_PER_MIN cap). */
+export const FINNHUB_DRIP_MS = 3000;
 /** Finnhub call cap per rolling 60s. */
 export const FINNHUB_MAX_PER_MIN = 50;
 /** Simulated-provider tick interval (ms). */
