@@ -43,6 +43,8 @@ export interface SchedulerOptions {
   finnhubKey?: string;
   /** Force Simulated for everything even if coingecko is present (demo mode). */
   forceSimulated?: boolean;
+  /** Inject providers directly (tests); defaults to glob discovery. */
+  providers?: QuoteProvider[];
 }
 
 interface Route {
@@ -67,7 +69,7 @@ function discoverProviders(): QuoteProvider[] {
   return out;
 }
 
-class Scheduler {
+export class Scheduler {
   private routes = new Map<string, QuoteProvider>();
   private intervals: Array<{ fire: number; cadence: number }> = [];
   private rafHandle = 0;
@@ -79,6 +81,9 @@ class Scheduler {
   private opts: SchedulerOptions;
   private readonly instById = new Map<string, Instrument>();
   private readonly lastRefresh = new Map<string, number>();
+  /** Count of instruments routed to the Finnhub drip provider (full round-robin
+   *  cycle width = this × FINNHUB_DRIP_MS). Derived from the live roster. */
+  private numFinnhubRouted = 0;
 
   // Per-provider tick tracking — refreshed from `routes` value lookup.
   private providers: QuoteProvider[] = [];
@@ -91,7 +96,6 @@ class Scheduler {
 
   start(): void {
     if (this.running) return;
-    this.providers = discoverProviders();
     this.buildRoutes();
     this.running = true;
     this.lastNow = performance.now();
@@ -117,6 +121,7 @@ class Scheduler {
   }
 
   private buildRoutes(): void {
+    this.providers = this.opts.providers ?? discoverProviders();
     const sim = this.providers.find((p) => p.id === 'simulated');
     const coingecko = this.providers.find((p) => p.id === 'coingecko');
     const finnhub = this.providers.find((p) => p.id === 'finnhub');
@@ -129,6 +134,14 @@ class Scheduler {
       if (provider) this.routes.set(inst.id, provider);
       else if (sim) this.routes.set(inst.id, sim);
     }
+    // Derive the Finnhub drip-cycle width from the live routed roster so the
+    // staleness cadence tracks the actual round-robin period
+    // (numFinnhubRouted × FINNHUB_DRIP_MS ≈ 95 × 1.2 s ≈ 114 s), not a
+    // hardcoded constant. Each equity only refreshes once per full cycle, so
+    // the stale threshold (STALE_MULT × this) ≈ 342 s only fires on a real
+    // ~5.7-min outage — live data on the ~114 s cycle reads fresh.
+    this.numFinnhubRouted = 0;
+    for (const p of this.routes.values()) if (p.id === 'finnhub') this.numFinnhubRouted++;
   }
 
   /** Full quote snapshot — the LOCAL resync hook for M5's welcome/broadcast. */
@@ -138,9 +151,14 @@ class Scheduler {
     const now = Date.now();
     const out: Quote[] = [];
     for (const q of this.emittedQuotes.values()) {
-      const cadence = this.cadenceFor(this.routes.get(q.id)?.id);
+      const providerId = this.routes.get(q.id)?.id;
+      const cadence = this.cadenceFor(providerId);
       const last = this.lastRefresh.get(q.id);
-      const stale = last != null ? now - last > STALE_MULT * cadence : false;
+      const cadenceStale = last != null ? now - last > STALE_MULT * cadence : false;
+      // Finnhub: union with the provider-emitted stale flag (repeated 429 /
+      // network failures) so a real outage still surfaces. Crypto/Simulated
+      // keep the cadence-only formula (unchanged).
+      const stale = providerId === 'finnhub' ? cadenceStale || q.stale === true : cadenceStale;
       out.push({ ...q, stale });
     }
     return out;
@@ -151,7 +169,7 @@ class Scheduler {
       case 'coingecko':
         return COINGECKO_INTERVAL_MS;
       case 'finnhub':
-        return FINNHUB_DRIP_MS;
+        return this.numFinnhubRouted * FINNHUB_DRIP_MS;
       default:
         return SIM_TICK_MS;
     }
@@ -246,12 +264,17 @@ class Scheduler {
   }
 
   private withStaleness(q: Quote): Quote {
-    const cadence = this.cadenceFor(this.routes.get(q.id)?.id);
+    const providerId = this.routes.get(q.id)?.id;
+    const cadence = this.cadenceFor(providerId);
     const last = this.lastRefresh.get(q.id);
     // A freshly-emitted quote is stale only if there was a prior refresh and
     // too long elapsed before this one (the loop's tick lane already gated the
     // catch-up, so this is normally false).
-    const stale = last != null && q.ts - last > STALE_MULT * cadence;
+    const cadenceStale = last != null && q.ts - last > STALE_MULT * cadence;
+    // Finnhub: also surface the provider's own stale flag (429 / network
+    // failures) so a real outage still reads stale even before the cadence
+    // threshold fires. Crypto/Simulated keep the cadence-only formula.
+    const stale = providerId === 'finnhub' ? cadenceStale || q.stale === true : cadenceStale;
     return { ...q, stale };
   }
 
