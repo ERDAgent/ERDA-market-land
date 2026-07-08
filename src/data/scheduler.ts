@@ -120,6 +120,22 @@ export class Scheduler {
     this.rafHandle = 0;
   }
 
+  /** Re-merge opts and rebuild routes WITHOUT restarting the rAF loop or
+   *  resetting emitted quotes. Called by the market bridge when the Finnhub
+   *  key (or demo-mode) changes mid-session — instruments newly routed to
+   *  Finnhub fetch on the next drip tick; instruments no longer routed to
+   *  Finnhub (key removed) resume Simulated. Stays opts-driven (the bridge
+   *  passes values in; the scheduler never reads the settings store). */
+  reconfigure(opts: Partial<SchedulerOptions>): void {
+    Object.assign(this.opts, opts);
+    this.buildRoutes();
+  }
+
+  /** Test seam: the live route map (provider per instrument id). */
+  _testRoutes(): Map<string, QuoteProvider> {
+    return this.routes;
+  }
+
   private buildRoutes(): void {
     this.providers = this.opts.providers ?? discoverProviders();
     const sim = this.providers.find((p) => p.id === 'simulated');
