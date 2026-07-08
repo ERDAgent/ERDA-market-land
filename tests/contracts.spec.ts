@@ -120,7 +120,7 @@ describe('M0C frozen contracts', () => {
     });
     it('data budgets', () => {
       expect(COINGECKO_INTERVAL_MS).toBe(60000);
-      expect(FINNHUB_DRIP_MS).toBe(1200);
+      expect(FINNHUB_DRIP_MS).toBe(3000);
       expect(FINNHUB_MAX_PER_MIN).toBe(50);
       expect(SIM_TICK_MS).toBe(5000);
       expect(QUOTES_RESYNC_MS).toBe(300000);

@@ -30,6 +30,27 @@ import { useSettingsStore } from '../../stores/settings';
 export type FinnhubStatus = 'ok' | 'no-key' | 'rate-limited' | 'down';
 
 const FINNHUB_BASE = 'https://finnhub.io/api/v1/quote';
+
+// ---- Admiral's diagnostic surface -------------------------------------------
+// The console logs below (tagged `eml:finnhub`) are the Admiral's DevTools
+// window into the live-data round-robin: every outbound request, every
+// response, and every failure path (429 / non-ok / network / parse / no-data)
+// emits a line so it's visible whether requests succeed, fail, or never fire.
+// NEVER log the API key: we log symbol + HTTP status only. If the URL is ever
+// logged, route it through `redactUrl()` (below) which strips `&token=…`.
+// Do not delete these logs in a future refactor — they are a diagnostic, not
+// telemetry; promote them to a real metrics sink before removing.
+let __reqSeq = 0;
+let __reqTotal = 0;
+
+/** Strip the `token=` (API key) query param from a URL before logging. Never
+ *  logs the key value. Currently unused (we log the symbol, not the URL) but
+ *  kept here so any future URL-logging doesn't leak the key. */
+function redactUrl(url: string): string {
+  return url.replace(/([?&])token=[^&]*&?/i, (_m, lead: string) =>
+    lead === '?' ? '?' : '',
+  );
+}
 /** Rolling pause after a 429 (§5.3). */
 const RATE_LIMIT_PAUSE_MS = 60_000;
 /** A quote is stale (provider-side view) when older than this since last ok fetch. */
@@ -182,22 +203,30 @@ class FinnhubProvider implements QuoteProvider {
 
     const sym = instrument.providerSymbol;
     const url = `${FINNHUB_BASE}?symbol=${encodeURIComponent(sym)}&token=${encodeURIComponent(key)}`;
+    // Diagnostic: outbound request counter (round-robin progress for the
+    // Admiral). total = batch length = full finnhub-routed roster width.
+    __reqTotal = batch.length;
+    const seq = ++__reqSeq;
+    console.log(`[eml:finnhub] \u2192 GET ${sym} (${seq}/${__reqTotal})`);
     let resp: Response;
     try {
       resp = await fetch(url, { cache: 'no-store' });
     } catch {
       // network down / offline → keep last known, mark stale-on-failure count.
+      console.warn(`[eml:finnhub] \u2717 ${sym} HTTP - network error`);
       this.recordFailure();
       this._status = 'down';
       return this.emitStaleKnown(instrument);
     }
 
     if (resp.status === 429) {
+      console.warn(`[eml:finnhub] \u2717 ${sym} HTTP 429 rate-limited`);
       this.pausedUntil = Date.now() + RATE_LIMIT_PAUSE_MS;
       this._status = 'rate-limited';
       return this.emitStaleKnown(instrument);
     }
     if (!resp.ok) {
+      console.warn(`[eml:finnhub] \u2717 ${sym} HTTP ${resp.status} no data`);
       this.recordFailure();
       this._status = 'down';
       return this.emitStaleKnown(instrument);
@@ -207,6 +236,7 @@ class FinnhubProvider implements QuoteProvider {
     try {
       json = await resp.json();
     } catch {
+      console.warn(`[eml:finnhub] \u2717 ${sym} HTTP ${resp.status} bad json`);
       this.recordFailure();
       this._status = 'down';
       return this.emitStaleKnown(instrument);
@@ -220,6 +250,7 @@ class FinnhubProvider implements QuoteProvider {
 
     // Price 0 + null often means finnhub has no data for this ticker yet.
     if (c === null || !Number.isFinite(c as number)) {
+      console.warn(`[eml:finnhub] \u2717 ${sym} HTTP ${resp.status} no data`);
       this.recordFailure();
       this._status = this.consecutiveFailures >= 3 ? 'down' : 'ok';
       return this.emitStaleKnown(instrument);
@@ -237,6 +268,9 @@ class FinnhubProvider implements QuoteProvider {
     const ts = t != null && Number.isFinite(t as number) ? (t as number) * 1000 : Date.now();
     const session = usMarketSession(new Date(ts));
     const stale = Date.now() - st.lastOkTs > STALE_AFTER_MS;
+    console.log(
+      `[eml:finnhub] \u2190 ${sym} HTTP ${resp.status} c=${c} dp=${dp ?? 'null'} pc=${pc ?? 'null'} ts=${t ?? 'null'}`,
+    );
     out.push({
       id: instrument.id,
       price: st.price,
@@ -309,6 +343,8 @@ function num(v: unknown): number | null {
   if (typeof v === 'number' && Number.isFinite(v)) return v;
   return null;
 }
+void redactUrl;
+
 function numOrNull(v: unknown): number | null {
   // finnhub legitimately returns null for absent fields.
   if (v === null || v === undefined) return null;
