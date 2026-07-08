@@ -16,7 +16,7 @@ import { useMarketStore } from '../stores/market';
 import { useUiStore } from '../stores/ui';
 import { useSettingsStore } from '../stores/settings';
 import { useConnectionStore } from '../stores/connection';
-import { startScheduler } from '../data/scheduler';
+import { startScheduler, getScheduler } from '../data/scheduler';
 import type { Quote } from '../net/protocol';
 import type { HeightMetric } from '../config/metrics';
 import type { BuildingsApi } from '../engine/systems/buildings';
@@ -97,6 +97,26 @@ export default function marketBridge(engine: EngineLike): void {
     finnhubKey: settings.finnhubKey,
     forceSimulated: settings.demoMode,
   });
+
+  // --- reactive reconfigure: a Settings change to the Finnhub key or demo
+  //     mode rebuilds routes live. startScheduler is a one-shot snapshot at
+  //     world mount; without this watch, a key entered later in Settings is
+  //     invisible to the running scheduler (instruments stay routed to
+  //     Simulated). On a guest the scheduler is undefined (guest skips
+  //     startScheduler above) so getScheduler() returns undefined and the
+  //     reconfigure call is a no-op — the role-guard stays intact. ---
+  stopWatches.push(
+    watch(
+      () => [settings.finnhubKey, settings.demoMode] as [string, boolean],
+      ([k, d]) => {
+        getScheduler()?.reconfigure({
+          finnhubKey: (k ?? '').trim(),
+          forceSimulated: Boolean(d),
+        });
+      },
+      { deep: false },
+    ),
+  );
 
   installed = true;
 }
