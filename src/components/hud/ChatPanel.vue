@@ -119,7 +119,7 @@ function onInput(e: KeyboardEvent): void {
 <style scoped>
 .chat {
   position: absolute;
-  top: 8px;
+  top: 48px;
   right: 8px;
   width: 18rem;
   max-height: 70vh;

@@ -30,7 +30,7 @@ const collapsed = ref<boolean>(false);
 <style scoped>
 .roster {
   position: absolute;
-  top: 8px;
+  top: 48px;
   left: 8px;
   width: 14rem;
   max-height: 60vh;
