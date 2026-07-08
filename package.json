@@ -1,0 +1,25 @@
+{
+  "name": "erda-market-land",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "pinia": "^2.3.1",
+    "three": "^0.169.0",
+    "vue": "^3.5.18"
+  },
+  "devDependencies": {
+    "@types/three": "^0.169.0",
+    "@vitejs/plugin-vue": "^5.2.3",
+    "typescript": "^5.7.3",
+    "vite": "^6.0.11",
+    "vitest": "^3.0.0",
+    "vue-tsc": "^2.2.0"
+  }
+}
