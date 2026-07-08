@@ -195,6 +195,28 @@ export class Scheduler {
     }
   }
 
+  /** Per-FETCH tick cadence for `tickLane` grouping — the interval at which a
+   *  provider's instruments are each individually refreshed. Distinct from
+   *  `cadenceFor` (used for staleness): finnhub's full round-robin cycle is
+   *  `numFinnhubRouted × FINNHUB_DRIP_MS` for *staleness* (one equity per
+   *  drip, full cycle to revisit), but each lane TICKS once per
+   *  FINNHUB_DRIP_MS. Grouping `tickLane` by the per-fetch cadence means
+   *  `tickLane(FINNHUB_DRIP_MS)` actually matches finnhub instruments
+   *  (M1F had regressed this — `cadenceFor('finnhub')` ≈ 285000 ≠ 3000,
+   *  so no finnhub fetch ever fired). */
+  private tickCadenceFor(providerId: string | undefined): number {
+    switch (providerId) {
+      case 'coingecko':
+        return COINGECKO_INTERVAL_MS;
+      case 'finnhub':
+        return FINNHUB_DRIP_MS;
+      case 'simulated':
+        return SIM_TICK_MS;
+      default:
+        return this.cadenceFor(providerId);
+    }
+  }
+
   private loop = (): void => {
     if (!this.running) return;
     this.rafHandle = requestAnimationFrame(this.loop);
@@ -241,7 +263,7 @@ export class Scheduler {
     for (const inst of this.manifest) {
       const p = this.routes.get(inst.id);
       if (!p) continue;
-      const provCadence = this.cadenceFor(p.id);
+      const provCadence = this.tickCadenceFor(p.id);
       if (provCadence !== cadence) continue;
       // Skip providers whose module is absent (M2) — finnhub/coingecko stay in
       // the cadence lanes only if their provider object exists. The cadence
