@@ -8,7 +8,7 @@
  *
  * Text nodes only. All labels rendered as text — never v-html.
  */
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useConnectionStore } from '../../stores/connection';
 import { useSettingsStore } from '../../stores/settings';
 import { useUiStore } from '../../stores/ui';
@@ -78,6 +78,15 @@ function backToMenu(): void {
 }
 
 function closeModal(): void { modalMode.value = null; }
+
+// M5G one-shot handoff: the menu sets `ui.pendingMode` before entering the
+// world screen; honor it once on mount + while still pending, opening the
+// SignalingModal in the requested mode, then clear.
+watch(() => ui.pendingMode, (m) => {
+  if (!m) return;
+  if (m === 'host') openInvite(); else openJoin();
+  ui.setPendingMode(null);
+}, { immediate: true });
 </script>
 
 <template>

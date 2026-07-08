@@ -18,6 +18,9 @@ export const useUiStore = defineStore('ui', () => {
   const screen = ref<Screen>('menu');
   const modals = reactive({ help: false, settings: false, invite: false, join: false });
   const selectedInstrumentId = ref<string | null>(null);
+  // One-shot the menu sets so TopBar (which mounts on the world screen) opens
+  // SignalingModal in the requested mode right after entering the world.
+  const pendingMode = ref<'host' | 'guest' | null>(null);
   const toasts = ref<Toast[]>([]);
   const debugOverlay = ref<boolean>(false);
 
@@ -37,5 +40,13 @@ export const useUiStore = defineStore('ui', () => {
     toasts.value = toasts.value.filter((t) => t.id !== id);
   }
 
-  return { screen, modals, selectedInstrumentId, toasts, debugOverlay, addToast, dismissToast };
+  /** One-shot setter for the menu→TopBar SignalingModal handoff (M5G). */
+  function setPendingMode(m: 'host' | 'guest' | null): void {
+    pendingMode.value = m;
+  }
+
+  return {
+    screen, modals, selectedInstrumentId, pendingMode,
+    toasts, debugOverlay, addToast, dismissToast, setPendingMode,
+  };
 });
