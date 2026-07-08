@@ -30,6 +30,11 @@ import { useConnectionStore } from '../stores/connection';
 import { useChatStore, type SysMsg } from '../stores/chat';
 import { useSettingsStore } from '../stores/settings';
 import { colorFromId } from '../stores/players';
+// Guest-side pos dispatcher (the unified `sendLocalPos` routes the guest role
+// here). ESM mutual import with guest.ts — safe: both bindings are function
+// declarations resolved as live bindings, only ever invoked at runtime, never
+// at module-eval time (no circular-init hazard).
+import { _dispatchGuestPos } from './guest';
 
 interface GuestConn {
   id: string;
@@ -96,6 +101,92 @@ export async function broadcastRel(env: Env): Promise<void> {
     }
   }
 }
+
+// ---- local pos sender (M4 avatars hook) ------------------------------------
+//
+// M4's `bridges/avatars.ts` owns the move-gate (>1cm / >0.5° vs last sent) and
+// the 12 Hz `POS_HZ` timer; it calls `sendLocalPos(p, q)` with the gated
+// transform. This module ONLY serializes + routes — NO second gate here (no
+// rate-limit, no movement drop): every call goes out, deferred only under
+// backpressure. Keeping the gate in exactly one place (M4) avoids two gates
+// conflicting. `sendLocalPos` takes explicit p,q (M4 reads engine.camera, we do
+// NOT re-read it) and works in BOTH host and guest roles:
+//   - guest: push to this guest's own `CH_POS` so the host receives + relays to
+//     the other guests (host's inbound-`pos` relay is preserved unchanged).
+//   - host: fan-out to every guest's `CH_POS` (buffer-aware) AND
+//     `emitRemotePos(selfId, p, q)` so the host's avatar is locally consistent
+//     (M4's bridge filters selfId on receive — harmless self-emit). Solo is a
+//     host with zero guests ⇒ the fan-out is a no-op.
+
+/** Buffer-aware fan-out of a `pos` env to a list of pos channels (host→guests).
+ *  Synchronous (void): a congested channel (≥BUFFER_HIGH) does NOT drop — its
+ *  send is deferred until `bufferedamountlow` fires. Exposed so host + tests
+ *  share one chute. */
+export function fanOutPosTo(channels: RTCDataChannel[], env: Env<'pos'>): void {
+  const payload = encodeWire(env);
+  for (const ch of channels) {
+    if (!channelOpen(ch)) continue;
+    if (ch.bufferedAmount >= BUFFER_HIGH) {
+      // backpressure: wait for drain, then send (never dropped, never gated)
+      void bufferedAmountLow(ch, BUFFER_LOW_THRESHOLD).then(() => {
+        if (channelOpen(ch)) { try { ch.send(payload); } catch { /* drop */ } }
+      });
+    } else {
+      try { ch.send(payload); } catch { /* unreliable — drop */ }
+    }
+  }
+}
+
+/** Collect every open guest `pos` channel from the host's per-guest map. */
+function collectGuestPosChannels(): RTCDataChannel[] {
+  const out: RTCDataChannel[] = [];
+  for (const g of guests.values()) if (channelOpen(g.pos)) out.push(g.pos);
+  return out;
+}
+
+/** Local-player position sender — the M4 avatars hook. Role-routed; no gate. */
+export function sendLocalPos(
+  p: [number, number, number],
+  q: [number, number, number, number],
+): void {
+  const conn = useConnectionStore();
+  const from = conn.selfId;
+  const env = makeEnv('pos', from, { p, q });
+  if (conn.role === 'guest') {
+    _dispatchGuestPos(env);
+    return;
+  }
+  // host (or solo: zero guests ⇒ no-op fan-out)
+  fanOutPosTo(collectGuestPosChannels(), env);
+  emitRemotePos(from, p, q);
+}
+
+/** Stand-down idiom for M4's bridge on room leave (clears the host `posTimer`
+ *  ref — a no-op now since M4 drives the cadence, no host setInterval runs). */
+export function stopLocalPosStream(): void {
+  if (posTimer !== undefined) { window.clearInterval(posTimer); posTimer = undefined; }
+}
+
+// ---- test-only seams (host's `guests` map is module-private; these let the
+// pos-sender unit test inject fake pos channels + reset between cases) --------
+
+/** Install fake guest pos channels into the host's per-guest map for tests. */
+export function _testInstallGuestChannels(list: Array<{ id: string; pos: RTCDataChannel }>): void {
+  for (const item of list) {
+    guests.set(item.id, {
+      id: item.id,
+      pc: undefined as unknown as RTCPeerConnection,
+      rel: undefined as unknown as RTCDataChannel,
+      pos: item.pos,
+      name: item.id, color: '',
+      lastPong: 0, pingSendAt: 0, missed: 0, rtt: undefined,
+      chat: new ChatRateLimiter(), posLimiter: new PosRateLimiter(),
+    });
+  }
+}
+
+/** Clear the host's per-guest map (test reset). */
+export function _testClearGuests(): void { guests = new Map<string, GuestConn>(); }
 
 // ---- small send helpers -----------------------------------------------------
 
