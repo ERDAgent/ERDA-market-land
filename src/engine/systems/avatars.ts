@@ -2,11 +2,11 @@
 //
 // Per remote peer: a world-positioned `THREE.Group` (no rotation — keeps the
 // name tag world-up) holding a `coneHolder` `Group` whose quaternion = the
-// remote peer's view quaternion. The cone is a `ConeGeometry(r 0.8, h 2)` with
+// remote peer's view quaternion. The cone is a `ConeGeometry(r 8, h 20)` with
 // its tip baked toward **−z = view direction** (`geo.rotateX(-π/2)`), colored
 // with the deterministic HSL that mirrors `players.colorFromId` so the avatar
-// matches the roster dots. A 192×64 canvas **name-tag** `Sprite` sits at +2.8u
-// (billboard; pill background; long-name truncation).
+// matches the roster dots. A 384×128 canvas **name-tag** `Sprite` (scale 48×16,// ~10× visible size at city scale) sits at y=+28 (billboard; pill background;
+// long-name truncation) — above the now-20-tall cone.
 //
 // Snapshot buffer: the **last two** `{t,p,q}` per peer live in a plain engine
 // `Map` (NOT Pinia). Each peer holds two persistent `Snap` objects (one
@@ -101,13 +101,13 @@ let bridgePosHz = 12; // bridge announces the live cadence here for the HUD over
 
 // ---- constants --------------------------------------------------------------
 
-const CONE_R = 0.8;
-const CONE_H = 2;
-const TAG_CW = 192;
-const TAG_CH = 64;
-const TAG_Y = 2.8;
-const TAG_SCALE_W = 4.5;
-const TAG_SCALE_H = 1.5;
+const CONE_R = 8;
+const CONE_H = 20;
+const TAG_CW = 384;
+const TAG_CH = 128;
+const TAG_Y = 28;
+const TAG_SCALE_W = 48;
+const TAG_SCALE_H = 16;
 const RENDER_LAG_MS = 150;
 // (HOLD_MS = 400: newest age beyond which we merely "hold" — applied
 //  mechanically by the bracket: renderT beyond newer ⇒ hold newest.)
@@ -145,19 +145,19 @@ function paintTag(c: HTMLCanvasElement, name: string, hue: number): void {
   const r = TAG_CH / 2;
   // pill background
   ctx.fillStyle = 'rgba(8, 12, 18, 0.78)';
-  roundedPill(ctx, 4, 4, TAG_CW - 8, TAG_CH - 8, r - 4);
+  roundedPill(ctx, 8, 8, TAG_CW - 16, TAG_CH - 16, r - 8);
   ctx.fill();
   // colored border (roster hue) reinforces the dot color
   ctx.strokeStyle = `hsl(${Math.round(hue * 360)} 70% 62%)`;
-  ctx.lineWidth = 3;
-  roundedPill(ctx, 4, 4, TAG_CW - 8, TAG_CH - 8, r - 4);
+  ctx.lineWidth = 6;
+  roundedPill(ctx, 8, 8, TAG_CW - 16, TAG_CH - 16, r - 8);
   ctx.stroke();
-  // name (truncate to fit)
+  // name (truncate to fit) — font scaled 2× to fill the 2×-larger canvas
   ctx.fillStyle = '#eaf2fb';
-  ctx.font = '600 30px sans-serif';
+  ctx.font = '600 60px sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  const maxW = TAG_CW - 24;
+  const maxW = TAG_CW - 48;
   let label = name.length > 16 ? name.slice(0, 15) + '…' : name;
   while (ctx.measureText(label).width > maxW && label.length > 2) {
     label = label.slice(0, -2) + '…';
