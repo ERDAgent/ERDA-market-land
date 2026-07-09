@@ -2,8 +2,8 @@
 //
 // Called once from the buildings system setup. Creates, per district, a raised
 // dark-tint ground slab (PLOT×0.3×PLOT) and a large floating district-name
-// sprite (1024×256 canvas, sizeAttenuation, scale 180×45) centered over the
-// plot (cx, cz) at y≈80 — above the tallest possible building (H_MAX=60).
+// sprite (1024×256 canvas, sizeAttenuation, scale 300×75) centered over the
+// plot (cx, cz) at y≈100 — above the tallest possible building (H_MAX=60).
 // All Three objects are tracked here and disposed on teardown.
 //
 // NOT a per-frame system (no update). Pure construction + disposal helper.
@@ -23,7 +23,7 @@ function makeNameTexture(label: string): THREE.CanvasTexture {
   g.clearRect(0, 0, c.width, c.height);
   g.fillStyle = 'rgba(8,12,18,0.0)';
   g.fillRect(0, 0, c.width, c.height);
-  g.font = '700 96px var(--font)';
+  g.font = '700 112px var(--font)';
   g.textAlign = 'center';
   g.textBaseline = 'middle';
   g.fillStyle = '#9fb2c6';
@@ -56,7 +56,7 @@ export function buildDistricts(scene: THREE.Scene): DistrictOverlay {
     scene.add(slab);
     slabs.push(slab);
 
-    // Name sprite centered over the plot (cx, cz), y≈80 (clears H_MAX=60).
+    // Name sprite centered over the plot (cx, cz), y≈100 (clears H_MAX=60).
     const tex = makeNameTexture(districtLabel(id));
     const mat2 = new THREE.SpriteMaterial({
       map: tex,
@@ -65,8 +65,8 @@ export function buildDistricts(scene: THREE.Scene): DistrictOverlay {
       sizeAttenuation: true,
     });
     const sp = new THREE.Sprite(mat2);
-    sp.scale.set(180, 45, 1);
-    sp.position.set(cx, 80, cz);
+    sp.scale.set(300, 75, 1);
+    sp.position.set(cx, 100, cz);
     sp.name = `district-name:${id}`;
     scene.add(sp);
     nameSprites.push(sp);
