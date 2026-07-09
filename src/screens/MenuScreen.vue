@@ -5,6 +5,7 @@ import { useUiStore } from '../stores/ui';
 import { VERSION_STRING } from '../version';
 
 const versionString = VERSION_STRING;
+const repoUrl = 'https://github.com/ERDAgent/ERDA-market-land';
 
 const settings = useSettingsStore();
 const ui = useUiStore();
@@ -41,8 +42,8 @@ function openHelp(): void {
 <template>
   <div class="menu">
     <div class="card">
-      <h1 class="title">ERDA <span>Market&nbsp;Land</span></h1>
-      <p class="subtitle">A 3D trading floor in your browser. Fly the skyline, read quotes at a glance.</p>
+      <h1 class="title">Virtual&nbsp;<span>Market&nbsp;Space</span></h1>
+      <p class="subtitle">Client hosted 3D multiuser financial explorer. Fly the skyline, read quotes at a glance, with friends or solo.</p>
 
       <label class="field" for="name">Display name</label>
       <input
@@ -57,15 +58,23 @@ function openHelp(): void {
       />
 
       <div class="row">
-        <button class="primary" :disabled="!canStartSolo" @click="startSolo">Start Solo</button>
-        <button class="ghost" :disabled="!canStartSolo" @click="startHost">Host a Room</button>
-        <button class="ghost" :disabled="!canStartSolo" @click="startJoin">Join a Room</button>
+        <button class="primary" :disabled="!canStartSolo" @click="startSolo">Fly Solo</button>
+        <button class="ghost" :disabled="!canStartSolo" @click="startHost">Host</button>
+        <button class="ghost" :disabled="!canStartSolo" @click="startJoin">Join</button>
       </div>
+
+      <p class="context">
+        <strong>Live data:</strong> grab a free API key at
+        <a href="https://finnhub.io" target="_blank" rel="noopener noreferrer">finnhub.io</a>
+        and paste it into <strong>Settings</strong> (the key icon) to switch from simulated
+        quotes to live market data. Because the free tier is rate-limited, data loads in
+        rolling waves rather than all at once.
+      </p>
 
       <div class="footer">
         <a class="link" role="button" tabindex="0" @click="openHelp" @keydown.enter="openHelp">Help
           (controls · privacy · NAT)</a>
-        <span class="version">{{ versionString }}</span>
+        <a class="version" :href="repoUrl" target="_blank" rel="noopener noreferrer">{{ versionString }}</a>
       </div>
     </div>
   </div>
@@ -159,6 +168,16 @@ button {
   color: var(--text);
 }
 
+.context {
+  margin-top: 1.1rem;
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  line-height: 1.45;
+}
+.context a {
+  color: var(--accent);
+}
+
 .footer {
   margin-top: 1.2rem;
   border-top: 1px solid var(--panel-border);
@@ -175,5 +194,9 @@ button {
   font-size: 0.7rem;
   font-family: var(--mono);
   color: var(--text-dim);
+  text-decoration: none;
+}
+.version:hover {
+  color: var(--accent);
 }
 </style>
