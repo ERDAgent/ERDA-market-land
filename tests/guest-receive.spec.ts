@@ -61,6 +61,7 @@ function welcomePayload(quotes: Quote[]): MsgPayload['welcome'] {
     manifestHash: 'deadbeef',
     chatTail: [],
     hostName: 'Host',
+    metric: 1,
   };
 }
 

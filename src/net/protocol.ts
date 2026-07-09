@@ -9,6 +9,7 @@
 // the manifest schema + the city layout share one definition of a district.
 
 import type { DistrictId } from '../config/city';
+import type { HeightMetric } from '../config/metrics';
 
 /** Wire protocol version. One home (here); `config/net.ts` re-exports it. */
 export const PROTOCOL_VERSION = 1 as const;
@@ -94,6 +95,7 @@ export type MsgType =
   | 'roster'
   | 'chat'
   | 'sys'
+  | 'metric'
   | 'quotesDelta'
   | 'quotesFull'
   | 'ping'
@@ -112,10 +114,14 @@ export interface MsgPayload {
     manifestHash: string;
     chatTail: ChatMsg[];
     hostName: string;
+    /** Host's current height metric so a late-joining guest renders the same
+     *  city as everyone else immediately (H2 metric-sync). */
+    metric: HeightMetric;
   };
   manifestFull: { manifest: Instrument[] };
   roster: { roster: PeerInfo[] };
   chat: { text: string };
+  metric: { m: HeightMetric };
   sys: { kind: 'join' | 'leave' | 'info'; text: string };
   quotesDelta: { quotes: Quote[] };
   quotesFull: { quotes: Quote[] };

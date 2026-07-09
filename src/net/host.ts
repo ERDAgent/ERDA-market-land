@@ -29,6 +29,8 @@ import {
 import { useConnectionStore } from '../stores/connection';
 import { useChatStore, type SysMsg } from '../stores/chat';
 import { useSettingsStore } from '../stores/settings';
+import { useMarketStore } from '../stores/market';
+import type { HeightMetric } from '../config/metrics';
 import { colorFromId } from '../stores/players';
 // Guest-side pos dispatcher (the unified `sendLocalPos` routes the guest role
 // here). ESM mutual import with guest.ts — safe: both bindings are function
@@ -289,6 +291,7 @@ function handleRelMessage(g: GuestConn, raw: unknown): void {
         manifestHash,
         chatTail: useChatStore().tail(CHAT_TAIL),
         hostName: hostName || selfName || 'Host',
+        metric: useMarketStore().metric,
       });
       sendRel(g, welcome);
       // manifest mismatch hook: proactively send manifestFull if guest might
@@ -335,6 +338,16 @@ function handleRelMessage(g: GuestConn, raw: unknown): void {
       g.missed = 0;
       g.rtt = now - g.pingSendAt;
       broadcastRoster();
+      break;
+    }
+    case 'metric': {
+      // A guest changed the height metric and relayed it to the host. The
+      // host applies it to its own store; the bridge's `watch(market.metric)`
+      // then fans it back out to ALL guests via `broadcastRel` (single
+      // broadcast path — NOT here). Same-value ⇒ watch no-fires ⇒ no echo.
+      const d = env.d as MsgPayload['metric'];
+      (engine.api as { market?: { setMetric?: (m: HeightMetric) => void } })
+        .market?.setMetric?.(d.m);
       break;
     }
     case 'bye': {

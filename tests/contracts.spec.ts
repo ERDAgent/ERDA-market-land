@@ -83,11 +83,11 @@ describe('M0C frozen contracts', () => {
     it('MsgType covers every wire + data type', () => {
       // compile-time: a value of each MsgType satisfies the union
       const types: MsgType[] = [
-        'hello', 'welcome', 'manifestFull', 'roster', 'chat', 'sys',
+        'hello', 'welcome', 'manifestFull', 'roster', 'chat', 'sys', 'metric',
         'quotesDelta', 'quotesFull', 'ping', 'pong', 'error', 'bye', 'pos',
       ];
-      expect(types).toHaveLength(13);
-      expect(new Set(types).size).toBe(13);
+      expect(types).toHaveLength(14);
+      expect(new Set(types).size).toBe(14);
     });
 
     it('Env<T> narrows d to the typed payload (compile-time + runtime sanity)', () => {

@@ -16,6 +16,9 @@ import { useMarketStore } from '../stores/market';
 import { useUiStore } from '../stores/ui';
 import { useSettingsStore } from '../stores/settings';
 import { useConnectionStore } from '../stores/connection';
+import { broadcastRel } from '../net/host';
+import { emitMetric } from '../net/guest';
+import { makeEnv } from '../net/rtc';
 import { startScheduler, getScheduler } from '../data/scheduler';
 import type { Quote } from '../net/protocol';
 import type { HeightMetric } from '../config/metrics';
@@ -65,11 +68,29 @@ export default function marketBridge(engine: EngineLike): void {
     },
   );
 
-  // --- market.metric → buildings recompute heights ----------------------------
+  // --- market.metric → buildings recompute heights + wire sync (H2) -----------
+  // A LOCAL metric change also transmits over the wire, role-routed:
+  //   host  → broadcastRel to all guests (host is the relay hub)
+  //   guest → emitMetric to the host, which applies it to its own store and
+  //           re-broadcasts to all guests via this same watch on the host side
+  //   solo  → no wire (zero peers)
+  // An APPLIED-REMOTE change (setMetric from a received `metric` message) does
+  // NOT re-broadcast: `metric` is a primitive (`1|2|3`) and Vue's `watch` fires
+  // ONLY on actual value change, so setting the same received value re-broadcasts
+  // nothing (no echo). A received value that differs from current fires the
+  // watch — that's a genuine divergence-correction; the host re-broadcasts it
+  // once (idempotent since it's now the value everyone else holds).
   const unsubMetric = watch(
     () => market.metric,
     (m: HeightMetric) => {
       (engine.api.buildings as BuildingsApi | undefined)?.applyMetric(m);
+      const role = useConnectionStore().role;
+      if (role === 'host') {
+        void broadcastRel(makeEnv('metric', 'H', { m }));
+      } else if (role === 'guest') {
+        emitMetric(m);
+      }
+      // 'solo' → nothing (no wire)
     },
   );
 

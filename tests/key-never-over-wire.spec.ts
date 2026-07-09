@@ -126,7 +126,7 @@ describe('M5 key-never-over-wire (§15)', () => {
     ];
     const welcome = makeEnv('welcome', 'H', {
       selfId: 'g1', roster, quotes, manifestHash: 'deadbeef',
-      chatTail, hostName: 'Host',
+      chatTail, hostName: 'Host', metric: 1,
     });
     const rosterEnv = makeEnv('roster', 'H', { roster });
     const qd = makeEnv('quotesDelta', 'H', { quotes });
@@ -142,7 +142,7 @@ describe('M5 key-never-over-wire (§15)', () => {
       { name: 'p', ver: 1 } as MsgPayload['hello'],
       {
         selfId: 'g', roster: [], quotes: [], manifestHash: '',
-        chatTail: [], hostName: 'H',
+        chatTail: [], hostName: 'H', metric: 1,
       } as MsgPayload['welcome'],
       { manifest: [] } as MsgPayload['manifestFull'],
       { roster: [] } as MsgPayload['roster'],
