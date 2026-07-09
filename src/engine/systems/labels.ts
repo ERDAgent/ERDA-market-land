@@ -3,11 +3,13 @@
 // One Sprite per building. Full 3-line texture (256×128): line1 ticker (bold
 // 44px), line2 price (30px), line3 signed changePct (30px green/red) + SIM
 // badge when source==='simulated'. A cached ticker-only texture (pre-render
-// once per instrument) serves the mid-range band. Sprite anchored above the
-// cube at y = hCurrent + 4.
+// once per instrument) is used as a fast first-paint placeholder while the
+// full 3-line texture regenerates within the budget. Sprite anchored above
+// the cube at y = hCurrent + 4.
 //
 // LOD by camera distance, evaluated ~4×/s (NOT per frame):
-//   <60u  full 3-line; 60–160u cached ticker-only; >160u hidden.
+//   <160u full 3-line label; ≥160u hidden. (Details visible at the same
+//   distance as the ticker, per Admiral request.)
 // Texture regen budget: ≤8 canvases/frame, nearest-first; never repaint
 // invisible labels (repaint lazily when re-entering range).
 //
@@ -23,8 +25,7 @@ import { useMarketStore } from '../../stores/market';
 
 const CW = 256;
 const CH = 128;
-const LOD_FULL = 60;
-const LOD_TICKER = 160;
+const LOD_TICKER = 160; // max visible distance; < this shows full 3-line label
 const LOD_INTERVAL_S = 0.25;
 const REPAINT_BUDGET_PER_FRAME = 8;
 const SPRITE_W = 12;
@@ -38,7 +39,7 @@ interface LabelItem {
   fullTexture: THREE.CanvasTexture | null;
   fullDirty: boolean;
   tickerTexture: THREE.CanvasTexture | null;
-  lod: 0 | 1 | 2; // 0 full | 1 ticker | 2 hidden
+  lod: 0 | 2; // 0 full 3-line (visible) | 2 hidden — ticker-only tier removed
   distSq: number;
   lastQuote: Quote | null;
 }
@@ -208,26 +209,26 @@ function evaluateLOD(buildings: import('./buildings').BuildingsApi): void {
     itemPos.set(L.x, 0, L.z);
     const dist = camPos.distanceTo(itemPos);
     it.distSq = dist * dist;
-    let mode: 0 | 1 | 2;
-    if (dist < LOD_FULL) mode = 0;
-    else if (dist < LOD_TICKER) mode = 1;
+    let mode: 0 | 2;
+    if (dist < LOD_TICKER) mode = 0;
     else mode = 2;
     if (mode === it.lod) continue; // no change
     it.lod = mode;
     if (mode === 2) {
       it.sprite.visible = false;
-    } else if (mode === 1) {
-      const tex = ensureTicker(it);
-      it.sprite.material.map = tex;
-      it.sprite.material.needsUpdate = true;
-      it.sprite.visible = true;
     } else {
-      // mode 0 — full. Assign an existing non-stale full texture immediately;
-      // otherwise queue a repaint (nearest-first, budgeted per frame).
+      // mode 0 — full 3-line. Show an existing non-stale full texture
+      // immediately; otherwise drop in the cached ticker-only texture as a
+      // fast first-paint placeholder and queue a full repaint (nearest-first,
+      // ≤8/frame) that upgrades it to 3-line detail.
       if (it.fullTexture && !it.fullDirty) {
         it.sprite.material.map = it.fullTexture;
         it.sprite.material.needsUpdate = true;
       } else {
+        if (!it.sprite.material.map) {
+          it.sprite.material.map = ensureTicker(it);
+          it.sprite.material.needsUpdate = true;
+        }
         it.fullDirty = true;
       }
       it.sprite.visible = true;
