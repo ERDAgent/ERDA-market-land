@@ -1,8 +1,8 @@
 /**
  * Full §9 fly controls: pointer lock (click), Esc releases, drag-to-look
  * fallback for touch, WASD on camera basis, Space/C world up/down, Shift sprint
- * x4, scroll wheel base-speed 10–200 (default 45), delta-time damped movement
- * (accel 200 u/s^2, friction 8/s), world clamps (y in [1.5,400], horiz <= 700
+ * x4, scroll wheel base-speed 10–200 (default 45), delta-time responsive
+ * movement (response 12/s, friction 8/s), world clamps (y in [1.5,400], horiz <= 700
  * soft push-back), spawn (0,80,260) facing origin.
  *
  * Built-in engine system (core registers it directly; NOT a dropped
@@ -15,7 +15,7 @@ import type { EngineSystem, EngineContext } from './core';
 const LOOK_SENSITIVITY = 0.0022;
 const MAX_PITCH = Math.PI / 2 - 0.05;
 const FRICTION = 8; // /s —— exponential damping rate (§9 "damped, friction 8/s")
-const ACCEL = 200; // u/s² (§9) — caps how fast velocity approaches the target
+const RESPONSE = 12; // /s — velocity approach rate toward desired (eases in ~0.2 s, reaches cruise = desired)
 const Y_MIN = 1.5;
 const Y_MAX = 400;
 const HORIZ_MAX = 700;
@@ -58,7 +58,6 @@ export function createFlyControls(
   const forward = new THREE.Vector3();
   const right = new THREE.Vector3();
   const desired = new THREE.Vector3();
-  const stepDelta = new THREE.Vector3();
   const up = new THREE.Vector3(0, 1, 0);
 
   const applyRotation = (): void => {
@@ -196,17 +195,13 @@ export function createFlyControls(
       if (desired.lengthSq() > 0) desired.normalize();
       desired.multiplyScalar(speed);
 
-      // Damped approach: steer velocity toward target, capped at ACCEL u/s²,
-      // plus an exponential friction decay toward 0 when there's no input.
-      const decay = Math.exp(-FRICTION * dt);
-      velocity.multiplyScalar(decay);
-      stepDelta.copy(desired).sub(velocity);
-      const stepLen = stepDelta.length();
-      if (stepLen > 0) {
-        const maxStep = ACCEL * dt;
-        const k = stepLen > maxStep ? maxStep / stepLen : 1;
-        stepDelta.multiplyScalar(k);
-        velocity.add(stepDelta);
+      if (desired.lengthSq() > 0) {
+        // Responsive lerp (RESPONSE=12/s) — reaches `desired` at steady state,
+        // so sprint (baseSpeed×4) is genuinely 4× walk.
+        velocity.lerp(desired, 1 - Math.exp(-RESPONSE * dt));
+      } else {
+        // No input: friction glide to a stop (unchanged feel).
+        velocity.multiplyScalar(Math.exp(-FRICTION * dt));
       }
       camera.position.addScaledVector(velocity, dt);
 
