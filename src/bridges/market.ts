@@ -31,6 +31,7 @@ export default function marketBridge(engine: EngineLike): void {
   // Idempotent guard: the glob runner is one-shot in the app, but the bridge
   // module could be imported during HMR / tests; never double-wire.
   if (installed) return;
+  console.log('[eml:bridge:market] market bridge running, role=', useConnectionStore().role);
 
   const market = useMarketStore();
   const ui = useUiStore();
@@ -85,6 +86,7 @@ export default function marketBridge(engine: EngineLike): void {
   }
 
   // --- start the local scheduler (solo/host only; no networking) --------------
+  console.log('[eml:bridge:market] starting scheduler, hasKey=', (settings.finnhubKey ?? '').length > 0);
   startScheduler({
     onDelta: (qs: Quote[]) => {
       market.applyDelta(qs);
