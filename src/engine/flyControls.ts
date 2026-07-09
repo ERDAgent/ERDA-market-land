@@ -69,13 +69,19 @@ export function createFlyControls(
     if (isInputFocused()) return;
     keys[e.code] = true;
     if (e.code === 'Space') e.preventDefault();
-    if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') sprinting = true;
+    if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') {
+      sprinting = true;
+      console.log('[eml:fly] sprint ON (×4)');
+    }
   };
 
   const onKeyUp = (e: KeyboardEvent): void => {
     if (!(e.code in keys)) return;
     keys[e.code] = false;
-    if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') sprinting = false;
+    if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') {
+      sprinting = false;
+      console.log('[eml:fly] sprint OFF');
+    }
   };
 
   const onMouseMove = (e: MouseEvent): void => {
@@ -155,6 +161,7 @@ export function createFlyControls(
       sprinting = false;
       locked = false;
       for (const k in keys) delete keys[k];
+      console.log('[eml:fly] init baseSpeed=', baseSpeed, 'sprint=speed×4');
 
       window.addEventListener('keydown', onKeyDown, { passive: false });
       window.addEventListener('keyup', onKeyUp);

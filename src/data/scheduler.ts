@@ -270,12 +270,11 @@ export class Scheduler {
       // lane fires but routes will only include the prov if it was discovered.
       if (p.id === 'finnhub' && !this.providers.some((q) => q.id === 'finnhub')) continue;
       if (p.id === 'coingecko' && !this.providers.some((q) => q.id === 'coingecko')) continue;
-      // Rate-limit finnhub: FINNHUB_MAX_PER_MIN calls per rolling 60s.
-      if (p.id === 'finnhub') {
-        if (!this.finnhubOkBy()) continue;
-        // Note: drip is one symbol per call; here we batch the route width.
-        this.finnhubCalls.push(Date.now());
-      }
+      // NOTE: the finnhub rate-limit gate lives in the per-provider fetch loop
+      // below — it counts actual HTTP CALLS (one per drip), not instruments in
+      // the batch. Gating here (per instrument) would fill the 60s window in a
+      // single batch build and stall the round-robin on the prime (AAPL) for
+      // ~60s, which was the AAPL-only bug.
       let arr = byProvider.get(p);
       if (!arr) {
         arr = [];
@@ -284,6 +283,13 @@ export class Scheduler {
       arr.push(inst);
     }
     for (const [provider, batch] of byProvider) {
+      // Rate-limit finnhub at the BATCH level (one HTTP call per drip), gated
+      // ONCE per drip — not per instrument in the batch. Skip the whole finnhub
+      // batch this drip if the rolling-60s window is full.
+      if (provider.id === 'finnhub' && !this.finnhubOkBy()) continue;
+      if (provider.id === 'finnhub') {
+        console.log(`[eml:drip] finnhub batch (${batch.length} routed), fetching next symbol…`);
+      }
       try {
         const quotes = await provider.fetchQuotes(batch);
         for (const q of quotes) {
@@ -295,6 +301,9 @@ export class Scheduler {
       } catch {
         // A provider error must not take down the scheduler.
       }
+      // Count exactly ONE finnhub call per drip (matches the one actual HTTP
+      // request above), success OR error — keeping the limiter honest.
+      if (provider.id === 'finnhub') this.finnhubCalls.push(Date.now());
     }
   }
 
