@@ -49,10 +49,22 @@ export const CHAT_MAX_CHARS = 500;
 // ----- Data budgets (§5) -----
 /** CoinGecko poll interval (ms). */
 export const COINGECKO_INTERVAL_MS = 60000;
-/** Finnhub drip interval (ms); 20 calls/min (one equity every 3 s by the
- *  Admiral's cadence call — well inside the FINNHUB_MAX_PER_MIN cap). */
-export const FINNHUB_DRIP_MS = 3000;
-/** Finnhub call cap per rolling 60s. */
+/** Finnhub burst-then-wait: gap between per-symbol calls WITHIN a burst
+ *  (250 ms × 50 = 12.5 s of fetching, spread to avoid 429 — not a slam).
+ *  Replaces the old one-symbol-every-3s `FINNHUB_DRIP_MS` drip; the free tier
+ *  allows ~60 calls/min, so this bursts most equities onto screen within ~13 s
+ *  of mount instead of over ~5 min. Also the per-FETCH tick cadence
+ *  (`tickCadenceFor('finnhub')`) so `tickLane(FINNHUB_BURST_SPACING_MS)` matches
+ *  finnhub instruments during an active burst. */
+export const FINNHUB_BURST_SPACING_MS = 250;
+/** Finnhub burst cycle (ms): one full burst of `FINNHUB_MAX_PER_MIN` calls per
+ *  60 s. Also the STALENESS cadence (`cadenceFor('finnhub')`) — each equity
+ *  refreshes at least once per two cycles (round-robin persists across bursts),
+ *  so the stale threshold is `STALE_MULT × FINNHUB_CYCLE_MS` ≈ 180 s (real
+ *  outage), not the 250 ms per-fetch spacing. */
+export const FINNHUB_CYCLE_MS = 60000;
+/** Finnhub call cap per rolling 60s (= burst SIZE); a hair under the 60/min
+ *  rolling limit so a stray call doesn't 429. */
 export const FINNHUB_MAX_PER_MIN = 50;
 /** Simulated-provider tick interval (ms). */
 export const SIM_TICK_MS = 5000;

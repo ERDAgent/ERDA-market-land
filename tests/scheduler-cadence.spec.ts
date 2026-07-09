@@ -1,24 +1,24 @@
-// tests/scheduler-cadence.spec.ts — M1F Finnhub drip-cadence staleness fix.
+// tests/scheduler-cadence.spec.ts — Finnhub burst-then-wait staleness fix.
 //
-// The Finnhub provider drips one symbol per FINNHUB_DRIP_MS, so each equity
-// only actually refreshes once per full round-robin cycle of
-// `numFinnhubRouted × FINNHUB_DRIP_MS` (≈ 95 × 1.2 s ≈ 114 s). The stale
-// threshold must therefore be `STALE_MULT × numFinnhubRouted × FINNHUB_DRIP_MS`
-// (≈ 342 s), not the per-symbol drip interval (3.6 s) — otherwise every equity
-// reads `stale:true` from the second cycle onward even when data is live.
+// Finnhub now bursts one symbol per FINNHUB_BURST_SPACING_MS (50 calls in
+// ~12.5 s) then waits FINNHUB_CYCLE_MS (60 s); the round-robin ring persists
+// across bursts so each equity refreshes at least once per two cycles. The
+// STALENESS cadence is the full cycle FINNHUB_CYCLE_MS (NOT the per-fetch
+// spacing), so the stale threshold is `STALE_MULT × FINNHUB_CYCLE_MS` ≈ 180 s
+// — otherwise every equity reads `stale:true` between bursts even when live.
 //
 // Drives the live scheduler routes with a fake Finnhub provider and asserts:
-//   1. `cadenceFor('finnhub')` returns numFinnhubRouted × FINNHUB_DRIP_MS;
+//   1. `cadenceFor('finnhub')` returns FINNHUB_CYCLE_MS (the burst cycle);
 //   2. equities stay fresh when elapsed-since-last-refresh is between the old
-//      3.6 s threshold and the new ~342 s threshold (the live ~114 s cycle);
-//   3. equities go stale once elapsed > STALE_MULT × cycle (~342 s);
+//      per-spacing threshold and the new ~180 s threshold (the live cycle);
+//   3. equities go stale once elapsed > STALE_MULT × FINNHUB_CYCLE_MS (~180 s);
 //   4. the provider's own `stale` flag (429 / network) still surfaces on the
 //      quote even when the cadence-derived flag is fresh.
 
 import { describe, it, expect } from 'vitest';
 import { Scheduler } from '../src/data/scheduler';
 import type { Instrument, Quote, QuoteProvider } from '../src/net/protocol';
-import { FINNHUB_DRIP_MS, STALE_MULT, SIM_TICK_MS, COINGECKO_INTERVAL_MS } from '../src/config/net';
+import { FINNHUB_CYCLE_MS, STALE_MULT, SIM_TICK_MS, COINGECKO_INTERVAL_MS } from '../src/config/net';
 
 /** A finnhub-shaped provider that emits live (non-stale) quotes on demand. */
 class FakeFinnhub implements QuoteProvider {
@@ -75,19 +75,19 @@ function stocks(n: number): Instrument[] {
   return out;
 }
 
-const N = 95; // acceptance-mandated roster size → ~2-min cycle
-const CYCLE_MS = N * FINNHUB_DRIP_MS; // ≈ 114000 ms
-const THRESHOLD_MS = STALE_MULT * CYCLE_MS; // ≈ 342000 ms
+const N = 95; // acceptance-mandated roster size → burst wraps within FINNHUB_MAX_PER_MIN
+const CYCLE_MS = FINNHUB_CYCLE_MS; // 60000 ms
+const THRESHOLD_MS = STALE_MULT * CYCLE_MS; // ≈ 180000 ms
 
 describe('M1F Finnhub drip-cadence staleness', () => {
-  it('cadenceFor(finnhub) = numFinnhubRouted × FINNHUB_DRIP_MS (derived from live roster)', () => {
+  it('cadenceFor(finnhub) = FINNHUB_CYCLE_MS (the burst cycle, not the per-fetch spacing)', () => {
     const s = new Scheduler({
       manifest: stocks(N),
       providers: [new FakeFinnhub()],
       finnhubKey: 'test',
     });
     (s as any).buildRoutes();
-    // 95 stocks routed to finnhub → numFinnhubRouted === N
+    // 95 stocks routed to finnhub → numFinnhubRouted === N (kept for diagnostics)
     expect((s as any).numFinnhubRouted).toBe(N);
     expect((s as any).cadenceFor('finnhub')).toBe(CYCLE_MS);
   });
@@ -104,7 +104,7 @@ describe('M1F Finnhub drip-cadence staleness', () => {
     expect((s as any).cadenceFor(undefined)).toBe(SIM_TICK_MS);
   });
 
-  it('equities are NOT stale mid-cycle (elapsed > 3.6 s but < ~342 s threshold)', () => {
+  it('equities are NOT stale mid-cycle (elapsed > per-spacing threshold but < ~180 s threshold)', () => {
     const s = new Scheduler({
       manifest: stocks(N),
       providers: [new FakeFinnhub()],
@@ -112,7 +112,7 @@ describe('M1F Finnhub drip-cadence staleness', () => {
     });
     (s as any).buildRoutes();
     const now = Date.now();
-    // Prior refresh happened ~one full cycle ago (live drip just re-fired).
+    // Prior refresh happened ~one full cycle ago (the next burst just re-fired).
     (s as any).lastRefresh.set('s0', now - CYCLE_MS);
     const q: Quote = {
       id: 's0',
@@ -123,14 +123,14 @@ describe('M1F Finnhub drip-cadence staleness', () => {
       session: 'open',
     };
     const out = (s as any).withStaleness(q) as Quote;
-    // 114 s elapsed > old 3.6 s threshold but < new 342 s threshold ⇒ fresh.
+    // 60 s elapsed > a per-fetch-spacing stale threshold would've been, but
+    // < new ~180 s threshold ⇒ fresh.
     expect(now - (now - CYCLE_MS)).toBe(CYCLE_MS);
-    expect(CYCLE_MS).toBeGreaterThan(3 * FINNHUB_DRIP_MS); // would've been stale pre-fix
     expect(CYCLE_MS).toBeLessThan(THRESHOLD_MS);
     expect(out.stale).toBe(false);
   });
 
-  it('equities DO go stale once elapsed > STALE_MULT × numFinnhubRouted × FINNHUB_DRIP_MS', () => {
+  it('equities DO go stale once elapsed > STALE_MULT × FINNHUB_CYCLE_MS', () => {
     const s = new Scheduler({
       manifest: stocks(N),
       providers: [new FakeFinnhub()],
