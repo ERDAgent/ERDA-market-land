@@ -1,33 +1,36 @@
-// tests/scheduler-drip-fires.spec.ts — F4B regression guard.
+// tests/scheduler-drip-fires.spec.ts — F4B/F9 regression guard.
 //
-// Root cause of "no live data appears": M1F changed `cadenceFor('finnhub')` to
-// return the FULL round-robin cycle (`numFinnhubRouted × FINNHUB_DRIP_MS` ≈
-// 285000 ms) for staleness. But `tickLane` grouped instruments by that same
-// `cadenceFor` value, so `tickLane(FINNHUB_DRIP_MS = 3000)` matched NO finnhub
-// instrument (285000 ≠ 3000) — meaning NO finnhub fetch ever fired, prime or
-// drip, since M1F merged. The M1F suite only checked staleness math, not the
-// drip-fires path, so the regression hid.
+// Root cause of "no live data appears" (F4B): M1F changed `cadenceFor('finnhub')`
+// to return the FULL round-robin cycle for staleness. But `tickLane` grouped
+// instruments by that same `cadenceFor` value, so the finnhub lane matched NO
+// instrument — meaning NO finnhub fetch ever fired, prime or drip, since M1F
+// merged. The M1F suite only checked staleness math, not the fires path.
 //
 // F4B fix: split the TICK cadence (`tickCadenceFor`, per-fetch) from the STALE
-// cadence (`cadenceFor`, full cycle). `tickLane` now groups by
-// `tickCadenceFor`, so `tickLane(FINNHUB_DRIP_MS)` actually matches finnhub
-// instruments and the fetch fires.
+// cadence (`cadenceFor`, full cycle). F9 carries this forward to the
+// burst-then-wait state machine: `tickCadenceFor('finnhub') =
+// FINNHUB_BURST_SPACING_MS` so `tickLane(FINNHUB_BURST_SPACING_MS)` matches
+// finnhub instruments and the burst fetch fires.
 //
 // This suite drives the real scheduler `start()` (rAF bridged to setTimeout so
 // fake timers drive the loop; performance.now() is fake-timer-mocked) with a
 // RECORDING fake finnhub provider (no network) + a stub key, advances the
 // clock, and asserts `fetchQuotes` is actually called:
 //   1. Prime fires the first finnhub fetch immediately at start (t=0, inside
-//      the first FINNHUB_DRIP_MS window) — the Admiral's "live ~0s" expectation.
-//   2. A second fetch fires after advancing one drip cadence (the lane re-fires).
+//      the first FINNHUB_BURST_SPACING_MS window) — the Admiral's "live ~0s"
+//      expectation.
+//   2. A second fetch fires after advancing one burst spacing (lane re-fires).
 //   3. With NO key, finnhub never fires (routes to simulated) — guard against
 //      a false positive where the sim lane accidentally satisfies the assertion.
+//   4. (F9) Burst-then-wait: exactly FINNHUB_MAX_PER_MIN calls fire in the first
+//      burst, the lane goes dormant, then `burstCount` resets across the cycle
+//      gate and the second burst resumes the round-robin.
 //
 // No real API key; the stub key is a literal non-secret string.
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { Scheduler } from '../src/data/scheduler';
-import { FINNHUB_DRIP_MS } from '../src/config/net';
+import { FINNHUB_BURST_SPACING_MS, FINNHUB_MAX_PER_MIN } from '../src/config/net';
 import type { Instrument, Quote, QuoteProvider } from '../src/net/protocol';
 
 /** Recording finnhub provider — counts fetchQuotes invocations (no network). */
@@ -123,14 +126,15 @@ describe('F4B drip-fires — finnhub fetch actually fires through the drip lane'
       finnhubKey: 'stub-key',
     });
     s.start();
-    // Flush the async prime `tickLane(FINNHUB_DRIP_MS)` microtask chain at t=0
-    // (well inside the first FINNHUB_DRIP_MS window) — no clock advance needed.
+    // Flush the async prime `tickLane(FINNHUB_BURST_SPACING_MS)` microtask chain
+    // at t=0 (well inside the first FINNHUB_BURST_SPACING_MS window) — no clock
+    // advance needed.
     await vi.advanceTimersByTimeAsync(0);
     expect(finnhub.calls).toBeGreaterThanOrEqual(1);
     s.stop();
   });
 
-  it('a second finnhub fetch fires after advancing one FINNHUB_DRIP_MS drip', async () => {
+  it('a second finnhub fetch fires after advancing one FINNHUB_BURST_SPACING_MS', async () => {
     const finnhub = new RecordingFinnhub();
     const sim = new RecordingSim();
     const s = new Scheduler({
@@ -139,9 +143,9 @@ describe('F4B drip-fires — finnhub fetch actually fires through the drip lane'
       finnhubKey: 'stub-key',
     });
     s.start();
-    // Prime fires at t=0; the finnhub lane's next gate is one cadence later,
-    // so advancing past FINNHUB_DRIP_MS must re-fire the lane through the loop.
-    await vi.advanceTimersByTimeAsync(FINNHUB_DRIP_MS + 50);
+    // Prime fires at t=0; the finnhub lane's next gate is one spacing later,
+    // so advancing past FINNHUB_BURST_SPACING_MS must re-fire the lane.
+    await vi.advanceTimersByTimeAsync(FINNHUB_BURST_SPACING_MS + 50);
     expect(finnhub.calls).toBeGreaterThanOrEqual(2);
     s.stop();
   });
@@ -155,10 +159,37 @@ describe('F4B drip-fires — finnhub fetch actually fires through the drip lane'
       finnhubKey: '',
     });
     s.start();
-    await vi.advanceTimersByTimeAsync(FINNHUB_DRIP_MS + 50);
+    await vi.advanceTimersByTimeAsync(FINNHUB_BURST_SPACING_MS + 50);
     expect(finnhub.calls).toBe(0);
     // Sanity: the simulated fallback actually took the instruments.
     expect(sim.calls).toBeGreaterThanOrEqual(1);
+    s.stop();
+  });
+
+  it('burst-then-wait: FINNHUB_MAX_PER_MIN calls per burst, then burstCount resets across the cycle gate', async () => {
+    const finnhub = new RecordingFinnhub();
+    const sim = new RecordingSim();
+    const s = new Scheduler({
+      manifest: stocks(3),
+      providers: [finnhub, sim],
+      finnhubKey: 'stub-key',
+    });
+    s.start();
+    // Prime (t=0) + 49 loop fires spaced FINNHUB_BURST_SPACING_MS apart → the
+    // whole first burst lands within ~12.5 s, then the lane goes dormant.
+    await vi.advanceTimersByTimeAsync(14_000);
+    expect(finnhub.calls).toBe(FINNHUB_MAX_PER_MIN);
+    // The burst cap is reached; the lane is dormant-waiting.
+    expect((s as any)._testBurst().count).toBe(FINNHUB_MAX_PER_MIN);
+
+    // Advance well past the 60 s cycle gate (burst started at t=0). The next
+    // burst begins, so calls exceed the cap and burstCount resets to a small
+    // positive number (second burst in progress, not yet re-capped).
+    await vi.advanceTimersByTimeAsync(50_000);
+    expect(finnhub.calls).toBeGreaterThan(FINNHUB_MAX_PER_MIN);
+    const burstAfter = (s as any)._testBurst().count as number;
+    expect(burstAfter).toBeGreaterThan(0);
+    expect(burstAfter).toBeLessThan(FINNHUB_MAX_PER_MIN);
     s.stop();
   });
 });

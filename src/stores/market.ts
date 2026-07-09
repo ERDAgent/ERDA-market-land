@@ -22,6 +22,22 @@ export const useMarketStore = defineStore('market', () => {
   const metric = ref<HeightMetric>(1);
   const lastUpdated = ref<number>(0);
   const providerStatus = ref<ProviderStatus>('idle');
+  /** Instrument ids that have received at least one LIVE (source !== 'simulated')
+   *  quote. Drives the per-district loader fill in `LoadProgress.vue`. A `Set`
+   *  in a `shallowRef` — reassigned (new Set) on mutation so watchers fire. */
+  const firstLoadIds = shallowRef<Set<string>>(new Set());
+  /** Epoch ms of the next Finnhub burst, set by the scheduler via the bridge's
+   *  `onNextRefresh` sink. Drives the `LoadProgress.vue` refresh countdown. */
+  const nextRefreshTs = ref<number | null>(null);
+
+  /** Mark `id` live (first non-simulated quote). Reassigns the Set only when a
+   *  NEW id is added, so watchers don't fire on no-op merges. */
+  function markFirstLoad(id: string): void {
+    if (firstLoadIds.value.has(id)) return;
+    const next = new Set(firstLoadIds.value);
+    next.add(id);
+    firstLoadIds.value = next;
+  }
 
   /**
    * Merge `delta` into `quotes` (overwrite by id, latest wins) and reassign the
@@ -35,6 +51,7 @@ export const useMarketStore = defineStore('market', () => {
     for (const q of delta) {
       next.set(q.id, q);
       if (q.ts > newest) newest = q.ts;
+      if (q.source !== 'simulated') markFirstLoad(q.id);
     }
     quotes.value = next;
     lastUpdated.value = newest;
@@ -53,10 +70,15 @@ export const useMarketStore = defineStore('market', () => {
     for (const q of all) {
       next.set(q.id, q);
       if (q.ts > newest) newest = q.ts;
+      if (q.source !== 'simulated') markFirstLoad(q.id);
     }
     quotes.value = next;
     if (newest > 0) lastUpdated.value = newest;
     providerStatus.value = all.length > 0 ? 'live' : 'idle';
+  }
+
+  function setNextRefresh(ts: number | null): void {
+    nextRefreshTs.value = ts;
   }
 
   function setMetric(m: HeightMetric): void {
@@ -69,9 +91,12 @@ export const useMarketStore = defineStore('market', () => {
     metric,
     lastUpdated,
     providerStatus,
+    firstLoadIds,
+    nextRefreshTs,
     applyDelta,
     applyFull,
     snapshot,
+    setNextRefresh,
     setMetric,
   };
 });

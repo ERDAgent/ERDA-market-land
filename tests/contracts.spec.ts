@@ -34,7 +34,8 @@ import {
   CHAT_TAIL,
   CHAT_MAX_CHARS,
   COINGECKO_INTERVAL_MS,
-  FINNHUB_DRIP_MS,
+  FINNHUB_BURST_SPACING_MS,
+  FINNHUB_CYCLE_MS,
   FINNHUB_MAX_PER_MIN,
   SIM_TICK_MS,
   QUOTES_RESYNC_MS,
@@ -120,7 +121,8 @@ describe('M0C frozen contracts', () => {
     });
     it('data budgets', () => {
       expect(COINGECKO_INTERVAL_MS).toBe(60000);
-      expect(FINNHUB_DRIP_MS).toBe(3000);
+      expect(FINNHUB_BURST_SPACING_MS).toBe(250);
+      expect(FINNHUB_CYCLE_MS).toBe(60000);
       expect(FINNHUB_MAX_PER_MIN).toBe(50);
       expect(SIM_TICK_MS).toBe(5000);
       expect(QUOTES_RESYNC_MS).toBe(300000);

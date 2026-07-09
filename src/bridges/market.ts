@@ -96,6 +96,11 @@ export default function marketBridge(engine: EngineLike): void {
       // store in sync with the scheduler's full snapshot every QUOTES_RESYNC_MS.
       market.applyFull(all);
     },
+    onNextRefresh: (ts: number) => {
+      // Finnhub burst-then-wait: the scheduler reports the next burst epoch so
+      // the LoadProgress HUD can show a "next refresh in N s" countdown.
+      market.setNextRefresh(ts);
+    },
     finnhubKey: settings.finnhubKey,
     forceSimulated: settings.demoMode,
   });

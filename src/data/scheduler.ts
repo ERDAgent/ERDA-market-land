@@ -24,7 +24,8 @@
 import type { Instrument, Quote, QuoteProvider } from '../net/protocol';
 import {
   COINGECKO_INTERVAL_MS,
-  FINNHUB_DRIP_MS,
+  FINNHUB_BURST_SPACING_MS,
+  FINNHUB_CYCLE_MS,
   FINNHUB_MAX_PER_MIN,
   SIM_TICK_MS,
   QUOTES_RESYNC_MS,
@@ -37,6 +38,10 @@ export interface SchedulerOptions {
   onDelta?: (quotes: Quote[]) => void;
   /** Sink invoked on the full-resync cadence with the complete `Quote[]` snapshot. */
   onFull?: (quotes: Quote[]) => void;
+  /** Sink invoked when the scheduler computes the next Finnhub burst epoch ms
+   *  (at burst start: `now + FINNHUB_CYCLE_MS`). Forwarded to the market store
+   *  as `nextRefreshTs` for the load-refresh countdown HUD. */
+  onNextRefresh?: (ts: number) => void;
   /** Override the manifest (tests); defaults to the frozen roster. */
   manifest?: Instrument[];
   /** Finnhub API key (M2 reads settings); at M1 absent ⇒ finnhub skipped. */
@@ -81,12 +86,25 @@ export class Scheduler {
   private opts: SchedulerOptions;
   private readonly instById = new Map<string, Instrument>();
   private readonly lastRefresh = new Map<string, number>();
-  /** Count of instruments routed to the Finnhub drip provider (full round-robin
-   *  cycle width = this × FINNHUB_DRIP_MS). Derived from the live roster. */
+  /** Count of instruments routed to the Finnhub provider (kept for the
+   *  reconfigure test / diagnostic; no longer drives a cadence — the burst
+   *  cycle uses FINNHUB_CYCLE_MS directly). */
   private numFinnhubRouted = 0;
 
   // Per-provider tick tracking — refreshed from `routes` value lookup.
   private providers: QuoteProvider[] = [];
+
+  // --- Finnhub burst-then-wait state machine ------------------------------
+  // A burst is `FINNHUB_MAX_PER_MIN` consecutive `tickLane` fires, each spaced
+  // `FINNHUB_BURST_SPACING_MS` apart. After the cap, the lane goes dormant
+  // until `FINNHUB_CYCLE_MS` has elapsed since the burst STARTED, then the
+  // next burst begins (round-robin ring persists across bursts).
+  private finnhubLane: { fire: number; cadence: number } = {
+    fire: 0,
+    cadence: FINNHUB_BURST_SPACING_MS,
+  };
+  private burstCount = 0;
+  private burstStartTs = 0;
 
   constructor(opts: SchedulerOptions = {}) {
     this.opts = opts;
@@ -104,16 +122,21 @@ export class Scheduler {
     this.intervals = [
       { fire: this.lastNow + SIM_TICK_MS, cadence: SIM_TICK_MS }, // simulated
       { fire: this.lastNow + COINGECKO_INTERVAL_MS, cadence: COINGECKO_INTERVAL_MS }, // coingecko batch
-      { fire: this.lastNow + FINNHUB_DRIP_MS, cadence: FINNHUB_DRIP_MS }, // finnhub drip
     ];
+    // Finnhub burst lane is handled separately from the generic `intervals`
+    // (its cadence flips between the burst spacing and a dormant poll).
+    this.finnhubLane = { fire: this.lastNow + FINNHUB_BURST_SPACING_MS, cadence: FINNHUB_BURST_SPACING_MS };
+    this.burstCount = 0;
+    this.burstStartTs = 0;
     // Prime the city immediately: emit one sim tick now so buildings/labels
     // populate before the first 5s cadence elapses. Flush as soon as the
     // quotes land (allow the next frame's coalesced flush).
     this.tickLane(SIM_TICK_MS);
-    // Prime the Finnhub drip lane too, so a host/solo with a valid key fetches
-    // the FIRST equity right at world-mount (no FINNHUB_DRIP_MS delay). The
-    // interval table still gates the *next* drip one cadence after this prime.
-    this.tickLane(FINNHUB_DRIP_MS);
+    // Prime the Finnhub burst lane too, so a host/solo with a valid key
+    // fetches the FIRST equity right at world-mount (the burst begins
+    // immediately — no FINNHUB_BURST_SPACING_MS delay). The lane gates the
+    // *next* call one spacing after this prime.
+    if (this.finnhubActive()) this.fireOneBurstCall(this.lastNow);
     this.lastFlush = this.lastNow - 1500;
     this.loop();
   }
@@ -133,6 +156,12 @@ export class Scheduler {
   reconfigure(opts: Partial<SchedulerOptions>): void {
     Object.assign(this.opts, opts);
     this.buildRoutes();
+    // Reset the burst state so a newly-active Finnhub lane (key just entered)
+    // starts a fresh burst immediately, and a deactivated lane doesn't carry
+    // a stale half-burst. The loop's `finnhubActive()` guard gates firing.
+    this.burstCount = 0;
+    this.burstStartTs = 0;
+    this.finnhubLane = { fire: performance.now() + FINNHUB_BURST_SPACING_MS, cadence: FINNHUB_BURST_SPACING_MS };
   }
 
   /** Test seam: the live route map (provider per instrument id). */
@@ -154,12 +183,12 @@ export class Scheduler {
       if (provider) this.routes.set(inst.id, provider);
       else if (sim) this.routes.set(inst.id, sim);
     }
-    // Derive the Finnhub drip-cycle width from the live routed roster so the
-    // staleness cadence tracks the actual round-robin period
-    // (numFinnhubRouted × FINNHUB_DRIP_MS ≈ 95 × 1.2 s ≈ 114 s), not a
-    // hardcoded constant. Each equity only refreshes once per full cycle, so
-    // the stale threshold (STALE_MULT × this) ≈ 342 s only fires on a real
-    // ~5.7-min outage — live data on the ~114 s cycle reads fresh.
+    // Derive the live Finnhub-routed count (kept for the reconfigure test /
+    // diagnostic). The burst cycle cadence is now just FINNHUB_CYCLE_MS
+    // (60 s) — the round-robin ring persists across bursts, so the whole
+    // roster refreshes at least once per two cycles, and the stale threshold
+    // (STALE_MULT × FINNHUB_CYCLE_MS ≈ 180 s) only fires on a real ~3-min
+    // outage.
     this.numFinnhubRouted = 0;
     for (const p of this.routes.values()) if (p.id === 'finnhub') this.numFinnhubRouted++;
   }
@@ -189,7 +218,7 @@ export class Scheduler {
       case 'coingecko':
         return COINGECKO_INTERVAL_MS;
       case 'finnhub':
-        return this.numFinnhubRouted * FINNHUB_DRIP_MS;
+        return FINNHUB_CYCLE_MS;
       default:
         return SIM_TICK_MS;
     }
@@ -197,19 +226,18 @@ export class Scheduler {
 
   /** Per-FETCH tick cadence for `tickLane` grouping — the interval at which a
    *  provider's instruments are each individually refreshed. Distinct from
-   *  `cadenceFor` (used for staleness): finnhub's full round-robin cycle is
-   *  `numFinnhubRouted × FINNHUB_DRIP_MS` for *staleness* (one equity per
-   *  drip, full cycle to revisit), but each lane TICKS once per
-   *  FINNHUB_DRIP_MS. Grouping `tickLane` by the per-fetch cadence means
-   *  `tickLane(FINNHUB_DRIP_MS)` actually matches finnhub instruments
-   *  (M1F had regressed this — `cadenceFor('finnhub')` ≈ 285000 ≠ 3000,
-   *  so no finnhub fetch ever fired). */
+   *  `cadenceFor` (used for staleness): finnhub's STALENESS cadence is the
+   *  full burst cycle (FINNHUB_CYCLE_MS, 60 s), but each lane TICKS once per
+   *  FINNHUB_BURST_SPACING_MS during an active burst. Grouping `tickLane` by
+   *  the per-fetch cadence means `tickLane(FINNHUB_BURST_SPACING_MS)` actually
+   *  matches finnhub instruments (M1F had regressed this — grouping by the
+   *  staleness cadence matched NOTHING, so no finnhub fetch ever fired). */
   private tickCadenceFor(providerId: string | undefined): number {
     switch (providerId) {
       case 'coingecko':
         return COINGECKO_INTERVAL_MS;
       case 'finnhub':
-        return FINNHUB_DRIP_MS;
+        return FINNHUB_BURST_SPACING_MS;
       case 'simulated':
         return SIM_TICK_MS;
       default:
@@ -238,6 +266,12 @@ export class Scheduler {
       }
     }
 
+    // Finnhub burst-then-wait lane (separate from `intervals` — its cadence
+    // flips between the burst spacing and a dormant poll). One fire per frame.
+    if (this.finnhubActive() && now >= this.finnhubLane.fire) {
+      this.handleFinnhubBurst(now);
+    }
+
     // Once per second (coalesced): flush the dirty set into the delta sink.
     if (now - this.lastFlush >= 1000 && this.dirty.length > 0) {
       this.flushDirty();
@@ -253,6 +287,48 @@ export class Scheduler {
 
     void elapsed;
   };
+
+  /** Whether the Finnhub provider is present, keyed, non-demo, and actually
+   *  routing instruments — gates the burst lane from firing at all (no-key /
+   *  demo / absent-provider never emit a burst, never set `nextRefreshTs`). */
+  private finnhubActive(): boolean {
+    if ((this.opts.finnhubKey ?? '').length === 0) return false;
+    if (this.opts.forceSimulated) return false;
+    if (!this.providers.some((p) => p.id === 'finnhub')) return false;
+    return this.numFinnhubRouted > 0;
+  }
+
+  /** Fire one call of the current burst at `now`. Sets `burstStartTs` + emits
+   *  `onNextRefresh` on the burst's FIRST call (transient 0→1), advances the
+   *  lane gate by the burst spacing, and bumps `burstCount`. */
+  private fireOneBurstCall(now: number): void {
+    if (this.burstCount === 0) {
+      this.burstStartTs = now;
+      this.opts.onNextRefresh?.(now + FINNHUB_CYCLE_MS);
+    }
+    void this.tickLane(FINNHUB_BURST_SPACING_MS);
+    this.burstCount++;
+    this.finnhubLane.cadence = FINNHUB_BURST_SPACING_MS;
+    this.finnhubLane.fire = now + FINNHUB_BURST_SPACING_MS;
+  }
+
+  /** Burst-then-wait state machine — one fire per frame when the lane gate is
+   *  reached. While under `FINNHUB_MAX_PER_MIN` calls this burst, fire the next
+   *  call; once the cap is hit, go dormant-polling (1 s) until
+   *  `FINNHUB_CYCLE_MS` has elapsed since the burst started, then reset and
+   *  begin the next burst (round-robin ring persists). */
+  private handleFinnhubBurst(now: number): void {
+    if (this.burstCount < FINNHUB_MAX_PER_MIN) {
+      this.fireOneBurstCall(now);
+    } else if (now - this.burstStartTs >= FINNHUB_CYCLE_MS) {
+      this.burstCount = 0;
+      this.fireOneBurstCall(now);
+    } else {
+      // Dormant: poll the cycle gate cheaply (no fetch, no increment).
+      this.finnhubLane.cadence = 1000;
+      this.finnhubLane.fire = now + 1000;
+    }
+  }
 
   private dirty: Quote[] = [];
   private readonly emittedQuotes = new Map<string, Quote>();
@@ -288,7 +364,7 @@ export class Scheduler {
       // batch this drip if the rolling-60s window is full.
       if (provider.id === 'finnhub' && !this.finnhubOkBy()) continue;
       if (provider.id === 'finnhub') {
-        console.log(`[eml:drip] finnhub batch (${batch.length} routed), fetching next symbol…`);
+        console.log(`[eml:drip] finnhub burst (${batch.length} routed), fetching next symbol…`);
       }
       try {
         const quotes = await provider.fetchQuotes(batch);
@@ -307,11 +383,16 @@ export class Scheduler {
     }
   }
 
-  private finnhubCalls: number[] = [0];
+  private finnhubCalls: number[] = [];
   private finnhubOkBy(): boolean {
     const now = Date.now();
     this.finnhubCalls = this.finnhubCalls.filter((t) => now - t < 60_000);
     return this.finnhubCalls.length < FINNHUB_MAX_PER_MIN;
+  }
+  /** Test seam: live burst state (count + start ts) for the burst-then-wait
+   *  regression assertion that `burstCount` resets across the cycle gate. */
+  _testBurst(): { count: number; startTs: number } {
+    return { count: this.burstCount, startTs: this.burstStartTs };
   }
 
   private withStaleness(q: Quote): Quote {
