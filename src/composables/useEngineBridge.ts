@@ -16,7 +16,7 @@ import { engine } from '../engine/core';
 
 type BridgeInstaller = (engine: typeof import('../engine/core').engine) => void;
 
-const modules = import.meta.glob('../../bridges/*.ts', { eager: true }) as Record<
+const modules = import.meta.glob('/src/bridges/*.ts', { eager: true }) as Record<
   string,
   { default?: BridgeInstaller } | undefined
 >;
