@@ -1,8 +1,8 @@
 // src/engine/systems/labels.ts — §8.3 building labels (LOD + repaint budget).
 //
 // One Sprite per building. Full 3-line texture (256×128): line1 ticker (bold
-// 44px), line2 price (30px), line3 signed changePct (30px green/red) + SIM
-// badge when source==='simulated'. A cached ticker-only texture (pre-render
+// 44px), line2 price (30px), line3 signed changePct (30px — bright green up /
+// bright red down) + SIM badge when source==='simulated'. A cached ticker-only texture (pre-render
 // once per instrument) is used as a fast first-paint placeholder while the
 // full 3-line texture regenerates within the budget. Sprite anchored above
 // the cube at y = hCurrent + 4.
@@ -84,9 +84,9 @@ function drawFull(c: HTMLCanvasElement, item: LabelItem): void {
   ctx.fillStyle = stale ? '#2e6b3e' : '#4dff66';
   ctx.font = '30px sans-serif';
   ctx.fillText(formatPrice(q.price), 12, 56);
-  // line 3 — signed change: green-brightness (up bright phosphor / down dim green;
-  // stale → dim green). Keeps the up/down semantic readable as brighter/dimmer.
-  ctx.fillStyle = stale ? '#2e6b3e' : (q.changePct >= 0 ? '#9bff9b' : '#1a5a2a');
+  // line 3 — signed change: bright green up / bright red down (stale → dim green).
+  // Matches the buildings' red↔green semantic (COLOR_RED / COLOR_GREEN).
+  ctx.fillStyle = stale ? '#2e6b3e' : (q.changePct >= 0 ? '#4dff66' : '#ff4540');
   ctx.fillText(formatChangePct(q.changePct), 12, 92);
   // stale badge (mirrors the SIM badge slot) — dim green on the mono CRT.
   if (stale) {

@@ -1,6 +1,6 @@
 // Captain-bumped per voyage. Keep the format `YYYY-MM-DD.N` so it sorts and is
 // trivially human-readable.
-export const APP_VERSION = '2026-07-08.12';
+export const APP_VERSION = '2026-07-08.13';
 // The commit hash is injected at build/dev time by vite's `define` block — see
 // `vite.config.ts`. Falls back to 'dev' if undefined.
 declare const __COMMIT_HASH__: string | undefined;

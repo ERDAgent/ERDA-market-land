@@ -147,8 +147,8 @@ dl { margin: 0; }
 }
 .row dt { color: var(--text-dim); }
 .row dd { color: var(--text); font-family: var(--mono); text-align: right; }
-.pos { color: #9bff9b !important; }
-.neg { color: #1a5a2a !important; }
+.pos { color: #4dff66 !important; }
+.neg { color: #ff4540 !important; }
 
 .badge {
   display: inline-block;

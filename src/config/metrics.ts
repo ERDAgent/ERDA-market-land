@@ -9,10 +9,12 @@
 //   Mode 2 · Market cap: h = mapClamp(log10(mcap), [8.5,13.3], [3,60]); no mcap → H_MIN
 //   Mode 3 · Price: h = mapClamp(log10(price), [-2,5.1], [2,58])
 //
-// Color is ALWAYS day-change, regardless of height mode. CRT green-phosphor:
-// up = bright phosphor green, down = dim forest green, neutral = mid green —
-// the up/down semantic is carried by GREEN BRIGHTNESS, not red↔green hue.
-//   red #1a4a20 ← neutral #2e8a44 → green #6aff66, t = clamp(changePct/3, -1, 1);
+// Color is ALWAYS day-change, regardless of height mode. Dual-color CRT:
+// up = bright phosphor green (large positive), down = bright red (large
+// negative), neutral = dim dark midpoint — the SIGN picks hue (red/green),
+// the MAGNITUDE picks brightness, ramping up from a dim neutral toward either
+// bright extreme.
+//   red #ff4540 ← neutral #182218 → green #4dff66, t = clamp(changePct/3, -1, 1);
 //   |changePct| < 0.05 ⇒ exactly neutral.
 
 import { clamp, mapClamp } from '../utils/mapClamp';
@@ -22,10 +24,10 @@ export type HeightMetric = 1 | 2 | 3;
 export const H_MIN = 2;
 export const H_MAX = 60;
 
-/** Color-stop RGB triples (0..255) for the three-stop day-change lerp — phosphor green by brightness (down dim / neutral mid / up bright). */
-export const COLOR_RED = [0x1a, 0x4a, 0x20] as const;
-export const COLOR_NEUTRAL = [0x2e, 0x8a, 0x44] as const;
-export const COLOR_GREEN = [0x6a, 0xff, 0x66] as const;
+/** Color-stop RGB triples (0..255) for the three-stop day-change lerp — dual-color CRT (down bright red / neutral dim / up bright green). */
+export const COLOR_RED = [0xff, 0x45, 0x40] as const;
+export const COLOR_NEUTRAL = [0x18, 0x22, 0x18] as const;
+export const COLOR_GREEN = [0x4d, 0xff, 0x66] as const;
 
 /** Small band around 0 % treated as exactly neutral (spec: |changePct|<0.05). */
 export const NEUTRAL_BAND = 0.05;
