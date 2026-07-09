@@ -2,8 +2,8 @@
 //
 // Called once from the buildings system setup. Creates, per district, a raised
 // dark-tint ground slab (PLOT×0.3×PLOT) and a large floating district-name
-// sprite (1024×256 canvas, sizeAttenuation, scale 600×150 / 10×
-// (emoji + name, two-line)) centered over the plot (cx, cz) at y≈140
+// sprite (1024×256 canvas, sizeAttenuation, scale 200×50 / ~3.3×
+// (1/3 of I1's 10×) (emoji + name, two-line)) centered over the plot (cx, cz) at y≈140
 // (clears H_MAX=60). All Three objects are tracked here and disposed on
 // teardown.
 //
@@ -94,7 +94,7 @@ export function buildDistricts(scene: THREE.Scene): DistrictOverlay {
       sizeAttenuation: true,
     });
     const sp = new THREE.Sprite(mat2);
-    sp.scale.set(600, 150, 1);
+    sp.scale.set(200, 50, 1);
     sp.position.set(cx, 140, cz);
     sp.name = `district-name:${id}`;
     scene.add(sp);
