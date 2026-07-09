@@ -8,10 +8,11 @@
 // the cube at y = hCurrent + 4.
 //
 // LOD by camera distance, evaluated ~4×/s (NOT per frame):
-//   <160u full 3-line label; ≥160u hidden. (Details visible at the same
-//   distance as the ticker, per Admiral request.)
-// Texture regen budget: ≤8 canvases/frame, nearest-first; never repaint
-// invisible labels (repaint lazily when re-entering range).
+//   Always visible (full 3-line label at any distance). The hide tier (≥160u
+//   hidden) was removed per Admiral request so every label draws at full
+//   distance — there is no `mode=2` hide tier anymore.
+// Texture regen budget: ≤8 canvases/frame, nearest-first; the lazy first-paint
+// (cached ticker texture → full upgrade) still applies on entering view.
 //
 // Reads heights via `engine.api.buildings`. Quotes mark labels dirty through
 // `engine.api.labels.markDirty(quotes)`. The per-frame repaint count is
@@ -25,7 +26,6 @@ import { useMarketStore } from '../../stores/market';
 
 const CW = 256;
 const CH = 128;
-const LOD_TICKER = 160; // max visible distance; < this shows full 3-line label
 const LOD_INTERVAL_S = 0.25;
 const REPAINT_BUDGET_PER_FRAME = 8;
 const SPRITE_W = 12;
@@ -209,30 +209,27 @@ function evaluateLOD(buildings: import('./buildings').BuildingsApi): void {
     itemPos.set(L.x, 0, L.z);
     const dist = camPos.distanceTo(itemPos);
     it.distSq = dist * dist;
-    let mode: 0 | 2;
-    if (dist < LOD_TICKER) mode = 0;
-    else mode = 2;
+    // Always visible — no hide tier. (`lod` stays typed `0 | 2` but is never
+    // assigned 2; the lazy first-paint + nearest-first repaint budget handle
+    // the now-always-eligible set of 117 labels.)
+    const mode = 0;
     if (mode === it.lod) continue; // no change
     it.lod = mode;
-    if (mode === 2) {
-      it.sprite.visible = false;
+    // mode 0 — full 3-line. Show an existing non-stale full texture
+    // immediately; otherwise drop in the cached ticker-only texture as a
+    // fast first-paint placeholder and queue a full repaint (nearest-first,
+    // ≤8/frame) that upgrades it to 3-line detail.
+    if (it.fullTexture && !it.fullDirty) {
+      it.sprite.material.map = it.fullTexture;
+      it.sprite.material.needsUpdate = true;
     } else {
-      // mode 0 — full 3-line. Show an existing non-stale full texture
-      // immediately; otherwise drop in the cached ticker-only texture as a
-      // fast first-paint placeholder and queue a full repaint (nearest-first,
-      // ≤8/frame) that upgrades it to 3-line detail.
-      if (it.fullTexture && !it.fullDirty) {
-        it.sprite.material.map = it.fullTexture;
+      if (!it.sprite.material.map) {
+        it.sprite.material.map = ensureTicker(it);
         it.sprite.material.needsUpdate = true;
-      } else {
-        if (!it.sprite.material.map) {
-          it.sprite.material.map = ensureTicker(it);
-          it.sprite.material.needsUpdate = true;
-        }
-        it.fullDirty = true;
       }
-      it.sprite.visible = true;
+      it.fullDirty = true;
     }
+    it.sprite.visible = true;
   }
 }
 
