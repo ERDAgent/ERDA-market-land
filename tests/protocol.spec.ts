@@ -25,7 +25,7 @@ import { CHAT_MAX_CHARS, CHAT_RATE, POS_RX_MAX_HZ } from '../src/config/net';
 describe('net/validate — shape, clamp, rate-limit, unknown-t (§4.5)', () => {
   describe('unknown t ⇒ ignore', () => {
     it('isKnownMsgType accepts every wire type', () => {
-      for (const t of ['hello', 'welcome', 'manifestFull', 'roster', 'chat', 'sys', 'quotesDelta', 'quotesFull', 'ping', 'pong', 'error', 'bye', 'pos']) {
+      for (const t of ['hello', 'welcome', 'manifestFull', 'roster', 'chat', 'sys', 'metric', 'quotesDelta', 'quotesFull', 'ping', 'pong', 'error', 'bye', 'pos']) {
         expect(isKnownMsgType(t)).toBe(true);
       }
     });

@@ -10,7 +10,7 @@ import type { Env, MsgType, MsgPayload } from './protocol';
 import { CHAT_MAX_CHARS, CHAT_RATE, CHAT_RATE_WINDOW_MS, POS_RX_MAX_HZ } from '../config/net';
 
 const KNOWN: ReadonlySet<MsgType> = new Set<MsgType>([
-  'hello', 'welcome', 'manifestFull', 'roster', 'chat', 'sys',
+  'hello', 'welcome', 'manifestFull', 'roster', 'chat', 'sys', 'metric',
   'quotesDelta', 'quotesFull', 'ping', 'pong', 'error', 'bye', 'pos',
 ]);
 

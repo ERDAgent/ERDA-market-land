@@ -26,6 +26,7 @@ import {
 } from './rtc';
 import { decodeSignal, encodeSignal, SignalError } from './signaling';
 import { clampChatText, isChatPayload, isPosPayload, isSysPayload, parseEnv } from './validate';
+import type { HeightMetric } from '../config/metrics';
 import { emitRemotePos, hostInit } from './host';
 import { engine } from '../engine/core';
 import { useConnectionStore } from '../stores/connection';
@@ -138,6 +139,12 @@ function handleRel(raw: unknown): void {
       // Optional chaining ⇒ no crash if the seam is absent (merge-order safe).
       (engine.api as { market?: { applyFull?: (q: Quote[]) => void } })
         .market?.applyFull?.(d.quotes ?? []);
+      // H2: apply the host's current height metric so a late-joining guest
+      // renders the same city as everyone else immediately.
+      if (d.metric) {
+        (engine.api as { market?: { setMetric?: (m: HeightMetric) => void } })
+          .market?.setMetric?.(d.metric);
+      }
       // Local pos broadcast is now driven by M4's avatars bridge via
       // `sendLocalPos(p,q)` (host.ts); no guest-side camera-reading timer.
       startPing();
@@ -155,6 +162,13 @@ function handleRel(raw: unknown): void {
       const peer = roster.find((p) => p.id === env.from);
       const name = peer?.name ?? 'Peer';
       useChatStore().addChat(env.from, name, clampChatText(d.text), env.ts);
+      break;
+    }
+    case 'metric': {
+      // H2: relayed host→all metric change; apply to the guest's store.
+      const d = env.d as MsgPayload['metric'];
+      (engine.api as { market?: { setMetric?: (m: HeightMetric) => void } })
+        .market?.setMetric?.(d.m);
       break;
     }
     case 'sys': {
@@ -213,6 +227,15 @@ function handleRel(raw: unknown): void {
 function handlePos(env: Env): void {
   const d = env.d as MsgPayload['pos'];
   emitRemotePos(env.from, d.p, d.q);
+}
+
+/** H2: send a guest-initiated height-metric change to the host only (host-relay
+ *  mesh: guests can't broadcast to each other directly). The host applies it to
+ *  its own `market.metric`; the host's bridge `watch(metric)` then broadcasts
+ *  it to ALL guests. Guard `if (!channelOpen(rel)) return;` lives inside
+ *  `sendRel`. */
+export function emitMetric(m: HeightMetric): void {
+  sendRel(makeEnv('metric', selfId ?? '', { m }));
 }
 
 /** Push an already-built `pos` env onto this guest's own `CH_POS` so the host
