@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
- * TickerSidebar (§10) — right edge, below ChatPanel. Auto-mounted by the
- * WorldScreen `hud/*.vue` glob (name does not end in `Modal`).
+ * TickerSidebar (§10) — bottom-right corner. Auto-mounted by the WorldScreen
+ * `hud/*.vue` glob (name does not end in `Modal`).
  *
  * A scrollable, collapsible roster of EVERY manifest instrument (~117) grouped
  * by district, each row showing: ticker + category tag, dim truncated name,
@@ -14,12 +14,12 @@
  * District headers show `live / total` (mirrors LoadProgress). A search input
  * at the top filters rows by ticker/name.
  *
- * Anchor: right side, BELOW ChatPanel. ChatPanel is `top:48px; right:8px;
- * max-height:70vh` → its lowest extent is `48px + 70vh`. This panel sits at
- * `top: calc(48px + 70vh + 6px)` down to `bottom: 8px`, so it cannot overlap
- * ChatPanel (top-right), RosterPanel (top-left), InfoPanel (mid-left),
- * LoadProgress (bottom-left) or Toolbar (bottom-center). `pointer-events:auto`
- * on the panel; the WorldScreen `.hud-root` is `none`.
+ * Anchor: bottom-right corner. Collapsed by default — a small "📊 Tickers
+ * live/total" chip sits in the corner and expands the panel on click. When
+ * expanded the panel sizes to ~min(70vw, 960px) × ~min(80vh, 760px), growing
+ * up-and-left from the bottom-right corner (anchored with `right`/`bottom`).
+ * This clears LoadProgress (bottom-left) and the Toolbar (bottom-center/top).
+ * `pointer-events:auto` on the panel/chip; the WorldScreen `.hud-root` is `none`.
  *
  * Read-only on the market store; no mutations, no Three object enters Vue
  * reactivity (pure data display). Text nodes only — never `v-html`; ticker/name
@@ -36,7 +36,8 @@ import type { Instrument, Quote } from '../../net/protocol';
 const market = useMarketStore();
 const ui = useUiStore();
 
-const collapsed = ref<boolean>(false); // Admiral wants to see it by default.
+// Bottom-right panel, collapsed by default (expanded on demand via the chip).
+const open = ref<boolean>(false);
 const query = ref<string>('');
 
 // 1-second wall-clock tick so relative times stay fresh without spamming the
@@ -140,13 +141,26 @@ function flyToRow(id: string): void {
 </script>
 
 <template>
-  <div class="ticker-sidebar" :class="{ collapsed }">
-    <button class="header" @click="collapsed = !collapsed">
+  <!-- Collapsed chip: small bottom-right control; pointer-events on it only. -->
+  <button
+    v-if="!open"
+    class="ticker-chip"
+    title="Expand ticker roster"
+    @click="open = true"
+  >
+    <span class="chip-icon">📊</span>
+    <span class="chip-label">Tickers</span>
+    <span class="chip-pill">{{ summary.live }}/{{ summary.total }}</span>
+  </button>
+
+  <!-- Expanded panel: bottom-right, ~majority of screen, grows up-and-left. -->
+  <div v-else class="ticker-sidebar">
+    <button class="header" @click="open = false">
       <span class="title">Tickers · {{ summary.live }}/{{ summary.total }}</span>
-      <span class="chev">{{ collapsed ? '◂' : '▸' }}</span>
+      <span class="chev">▾</span>
     </button>
 
-    <div v-if="!collapsed" class="body">
+    <div class="body">
       <div class="search-row">
         <input
           v-model="query"
@@ -197,13 +211,49 @@ function flyToRow(id: string): void {
 </template>
 
 <style scoped>
+/* Collapsed chip: small bottom-right control. */
+.ticker-chip {
+  position: fixed;
+  right: 12px;
+  bottom: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: rgba(8, 12, 18, 0.86);
+  border: 1px solid var(--panel-border);
+  border-radius: 999px;
+  color: var(--text);
+  padding: 0.4rem 0.7rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+  pointer-events: auto; /* interactive chip; rest of hud-root is none */
+  z-index: 30;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.ticker-chip:hover {
+  border-color: var(--accent);
+  background: rgba(20, 28, 40, 0.92);
+}
+.chip-icon { font-size: 0.85rem; line-height: 1; }
+.chip-label { font-weight: 600; letter-spacing: 0.02em; }
+.chip-pill {
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  color: var(--text-dim);
+  border: 1px solid var(--panel-border);
+  border-radius: 999px;
+  padding: 0 0.4rem;
+}
+
+/* Expanded panel: bottom-right corner, majority of screen, grows up-and-left. */
 .ticker-sidebar {
-  position: absolute;
-  /* Below ChatPanel (top:48 + max-height:70vh) so no overlap. */
-  top: calc(48px + 70vh + 6px);
-  right: 8px;
-  bottom: 8px;
-  width: 19rem;
+  position: fixed;
+  right: 12px;
+  bottom: 12px;
+  width: 70vw;
+  max-width: 960px;
+  height: 80vh;
+  max-height: 760px;
   display: flex;
   flex-direction: column;
   background: rgba(8, 12, 18, 0.86);
@@ -212,7 +262,13 @@ function flyToRow(id: string): void {
   pointer-events: auto; /* interactive — rest of .hud-root is none */
   z-index: 30;
   overflow: hidden;
+  animation: ticker-expand 0.16s ease-out;
 }
+@keyframes ticker-expand {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 .header {
   display: flex;
   justify-content: space-between;
@@ -221,9 +277,10 @@ function flyToRow(id: string): void {
   background: transparent;
   border: none;
   color: var(--text);
-  padding: 0.45rem 0.6rem;
-  font-size: 0.8rem;
+  padding: 0.55rem 0.7rem;
+  font-size: 0.85rem;
   text-align: left;
+  cursor: pointer;
 }
 .chev { color: var(--text-dim); }
 
@@ -235,7 +292,7 @@ function flyToRow(id: string): void {
 }
 
 .search-row {
-  padding: 0 0.5rem 0.4rem;
+  padding: 0 0.6rem 0.45rem;
 }
 .search {
   width: 100%;
@@ -243,8 +300,8 @@ function flyToRow(id: string): void {
   color: var(--text);
   border: 1px solid var(--panel-border);
   border-radius: 6px;
-  padding: 0.32rem 0.5rem;
-  font-size: 0.78rem;
+  padding: 0.36rem 0.55rem;
+  font-size: 0.8rem;
   outline: none;
 }
 .search:focus { border-color: var(--accent); }
@@ -252,7 +309,7 @@ function flyToRow(id: string): void {
 .scroll {
   flex: 1 1 auto;
   overflow-y: auto;
-  padding: 0 0.4rem 0.4rem;
+  padding: 0 0.5rem 0.5rem;
 }
 
 .empty {
@@ -263,7 +320,7 @@ function flyToRow(id: string): void {
 }
 
 .district {
-  margin-bottom: 0.3rem;
+  margin-bottom: 0.35rem;
   border: 1px solid var(--panel-border);
   border-radius: 6px;
   background: rgba(15, 22, 32, 0.6);
@@ -274,35 +331,35 @@ function flyToRow(id: string): void {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0.36rem 0.5rem;
-  font-size: 0.78rem;
+  padding: 0.4rem 0.55rem;
+  font-size: 0.8rem;
   color: var(--text);
 }
 .district-head::-webkit-details-marker { display: none; }
 .district-label { font-weight: 600; }
 .district-count {
   font-family: var(--mono);
-  font-size: 0.7rem;
+  font-size: 0.72rem;
   color: var(--text-dim);
   border: 1px solid var(--panel-border);
   border-radius: 999px;
-  padding: 0 0.4rem;
+  padding: 0 0.45rem;
 }
 .district-count.all { color: #22c07a; border-color: rgba(34, 192, 122, 0.4); }
 
 .rows {
   list-style: none;
   margin: 0;
-  padding: 0.1rem 0.2rem 0.3rem;
+  padding: 0.15rem 0.25rem 0.35rem;
 }
 
 .row {
   display: grid;
   grid-template-columns: 1fr auto;
   grid-template-rows: auto auto auto;
-  gap: 0.1rem 0.5rem;
+  gap: 0.12rem 0.55rem;
   align-items: center;
-  padding: 0.28rem 0.4rem;
+  padding: 0.3rem 0.45rem;
   border-radius: 6px;
   cursor: pointer;
   transition: background 0.12s ease;
@@ -313,27 +370,27 @@ function flyToRow(id: string): void {
 .row-main {
   display: flex;
   align-items: center;
-  gap: 0.35rem;
+  gap: 0.4rem;
   min-width: 0;
 }
 .ticker {
   font-family: var(--mono);
   font-weight: 700;
-  font-size: 0.8rem;
+  font-size: 0.82rem;
   color: var(--text);
 }
 .cat {
-  font-size: 0.6rem;
+  font-size: 0.62rem;
   color: var(--text-dim);
   border: 1px solid var(--panel-border);
   border-radius: 4px;
-  padding: 0 0.25rem;
+  padding: 0 0.28rem;
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
 .row-name {
   grid-column: 1 / -1;
-  font-size: 0.7rem;
+  font-size: 0.72rem;
   color: var(--text-dim);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -346,7 +403,7 @@ function flyToRow(id: string): void {
   align-items: center;
   gap: 0.5rem;
   font-family: var(--mono);
-  font-size: 0.74rem;
+  font-size: 0.76rem;
 }
 .price { color: var(--text); }
 .chg.neutral { color: var(--text-dim); }
@@ -362,7 +419,7 @@ function flyToRow(id: string): void {
 }
 .badge {
   font-family: var(--mono);
-  font-size: 0.62rem;
+  font-size: 0.64rem;
   font-weight: 700;
   padding: 0 0.35rem;
   border-radius: 4px;
@@ -384,15 +441,8 @@ function flyToRow(id: string): void {
   50% { opacity: 0.45; }
 }
 .last {
-  font-size: 0.62rem;
+  font-size: 0.64rem;
   color: var(--text-dim);
   font-family: var(--mono);
-}
-
-.ticker-sidebar.collapsed {
-  top: calc(48px + 70vh + 6px);
-  bottom: auto;
-  width: auto;
-  max-height: none;
 }
 </style>
