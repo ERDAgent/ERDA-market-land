@@ -144,7 +144,8 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown));
 </script>
 
 <template>
-  <div class="sig-backdrop" role="dialog" aria-modal="true" @click.self="close">
+  <Teleport to="body">
+    <div class="sig-backdrop" role="dialog" aria-modal="true" @click.self="close">
     <div class="sig">
       <div class="head">
         <h2>{{ mode === 'host' ? 'Invite a Player' : 'Join a Room' }}</h2>
@@ -214,6 +215,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown));
       </div>
     </div>
   </div>
+  </Teleport>
 </template>
 
 <style scoped>
