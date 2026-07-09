@@ -99,7 +99,7 @@ const lastUpdated = computed(() => {
   left: 12px;
   top: 50%;
   transform: translateY(-50%);
-  width: min(86vw, 17rem);
+  width: min(86vw, 20rem);
   padding: 0.85rem 0.95rem 0.75rem;
   background: rgba(8, 12, 18, 0.92);
   border: 1px solid var(--panel-border);
@@ -117,20 +117,20 @@ const lastUpdated = computed(() => {
 .ticker {
   display: block;
   font-family: var(--mono);
-  font-size: 1.05rem;
+  font-size: 1.26rem;
   font-weight: 700;
   color: var(--text);
 }
 .full {
   display: block;
-  font-size: 0.82rem;
+  font-size: 0.98rem;
   color: var(--text-dim);
 }
 .x {
   background: transparent;
   border: none;
   color: var(--text-dim);
-  font-size: 1.3rem;
+  font-size: 1.56rem;
   line-height: 1;
   padding: 0 0.3rem;
 }
@@ -143,18 +143,18 @@ dl { margin: 0; }
   gap: 0.6rem;
   padding: 0.22rem 0;
   border-bottom: 1px solid rgba(255, 255, 255, 0.04);
-  font-size: 0.82rem;
+  font-size: 0.98rem;
 }
 .row dt { color: var(--text-dim); }
 .row dd { color: var(--text); font-family: var(--mono); text-align: right; }
-.pos { color: #22c07a !important; }
-.neg { color: #d64550 !important; }
+.pos { color: #9bff9b !important; }
+.neg { color: #1a5a2a !important; }
 
 .badge {
   display: inline-block;
   padding: 0 0.4rem;
   border-radius: 4px;
-  font-size: 0.72rem;
+  font-size: 0.86rem;
   background: #1b2a3a;
   color: var(--text);
 }
@@ -162,20 +162,20 @@ dl { margin: 0; }
   margin-left: 0.3rem;
   padding: 0 0.32rem;
   border-radius: 4px;
-  font-size: 0.7rem;
+  font-size: 0.84rem;
   background: var(--accent);
   color: #06121c;
   font-weight: 700;
 }
 .stale {
   margin-left: 0.3rem;
-  font-size: 0.72rem;
+  font-size: 0.86rem;
   color: var(--text-dim);
 }
 .closed-note {
   display: block;
   margin-top: 0.2rem;
-  font-size: 0.7rem;
+  font-size: 0.84rem;
   color: var(--text-dim);
   font-style: italic;
 }
@@ -183,7 +183,7 @@ dl { margin: 0; }
 .note {
   margin: 0.5rem 0 0;
   color: var(--text-dim);
-  font-size: 0.78rem;
+  font-size: 0.94rem;
   line-height: 1.4;
   font-style: italic;
 }
@@ -200,7 +200,7 @@ dl { margin: 0; }
   border-radius: 8px;
   padding: 0.45rem 0.85rem;
   font-weight: 600;
-  font-size: 0.85rem;
+  font-size: 1.02rem;
 }
 .fly:hover:not(:disabled) { background: var(--accent-hover); }
 </style>
