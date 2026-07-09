@@ -82,14 +82,14 @@ export function buildDistricts(scene: THREE.Scene): DistrictOverlay {
   const nameSprites: THREE.Sprite[] = [];
   const nameTextures: THREE.CanvasTexture[] = [];
   const slabGeo = new THREE.BoxGeometry(PLOT, 0.3, PLOT);
-  // ONE shared slab face texture for all 9 slabs: 50% transparent green fill +
-  // a thick opaque green border ring. Built once, disposed once on teardown.
+  // ONE shared slab face texture for all 9 slabs: 90% transparent green fill +
+  // a thin opaque green border ring. Built once, disposed once on teardown.
   const slabTex = makeSlabTexture();
 
   for (const id of Object.keys(DISTRICTS) as DistrictId[]) {
     const def = DISTRICTS[id];
     const [cx, , cz] = plotCenter(def.col, def.row);
-    // CRT (K1): flat green-tinted slab — 50% transparent green fill + thick
+    // CRT (K1): flat green-tinted slab — 90% transparent green fill + thin
     // solid green outline via the shared canvas texture. MeshBasicMaterial so
     // it reads as a flat emissive CRT fill (ignores scene lights).
     const mat = new THREE.MeshBasicMaterial({
@@ -134,21 +134,21 @@ export function buildDistricts(scene: THREE.Scene): DistrictOverlay {
   };
 }
 
-/** Shared square slab face texture: 50% transparent green fill + thick opaque green border ring. */
+/** Shared square slab face texture: 90% transparent green fill + thin opaque green border ring. */
 function makeSlabTexture(): THREE.CanvasTexture {
   const SIZE = 256;
-  const BORDER = 12; // thick frame on the 256px square (visibly "thick")
+  const BORDER = 3; // thin frame on the 256px square (−75% vs the old 12px ring)
   const c = document.createElement('canvas');
   c.width = SIZE;
   c.height = SIZE;
   const g = c.getContext('2d')!;
   g.clearRect(0, 0, SIZE, SIZE);
-  // Interior: 50% transparent phosphor-green fill across the whole square
-  // (ground/grid faintly visible through it via the transparent material).
-  g.fillStyle = 'rgba(46, 255, 122, 0.5)';
+  // Interior: 90% transparent phosphor-green fill across the whole square
+  // (ground/grid clearly visible through it via the transparent material).
+  g.fillStyle = 'rgba(46, 255, 122, 0.1)';
   g.fillRect(0, 0, SIZE, SIZE);
-  // Thick opaque green border ring inset from the edge so the perimeter reads
-  // solid green while the center stays 50% see-through.
+  // Thin opaque green border ring so the perimeter reads as a crisp thin green
+  // outline while the center stays 90% see-through.
   g.fillStyle = '#2eff7a';
   // Top & bottom strips.
   g.fillRect(0, 0, SIZE, BORDER);

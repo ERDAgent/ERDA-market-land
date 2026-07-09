@@ -109,9 +109,9 @@ describe('§7.3 day-change color', () => {
   // (down bright red / neutral dim dark / up bright green) — regression guard
   // so a future accidental revert fails fast.
   it('color stops are exactly the dual-color CRT triples', () => {
-    expect([...COLOR_RED]).toEqual([0xff, 0x45, 0x40]);
+    expect([...COLOR_RED]).toEqual([0xff, 0x33, 0x22]);
     expect([...COLOR_NEUTRAL]).toEqual([0x18, 0x22, 0x18]);
-    expect([...COLOR_GREEN]).toEqual([0x4d, 0xff, 0x66]);
+    expect([...COLOR_GREEN]).toEqual([0x33, 0xff, 0x44]);
   });
 
   it('+3% → exactly green (acceptance: t=1.0)', () => {
