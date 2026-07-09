@@ -2,7 +2,7 @@
  * Full §9 fly controls: pointer lock (click), Esc releases, drag-to-look
  * fallback for touch, WASD on camera basis, Space/C world up/down, Shift sprint
  * x4, scroll wheel base-speed 10–200 (default 45), delta-time damped movement
- * (accel 40 u/s^2, friction 8/s), world clamps (y in [1.5,400], horiz <= 700
+ * (accel 200 u/s^2, friction 8/s), world clamps (y in [1.5,400], horiz <= 700
  * soft push-back), spawn (0,80,260) facing origin.
  *
  * Built-in engine system (core registers it directly; NOT a dropped
@@ -15,7 +15,7 @@ import type { EngineSystem, EngineContext } from './core';
 const LOOK_SENSITIVITY = 0.0022;
 const MAX_PITCH = Math.PI / 2 - 0.05;
 const FRICTION = 8; // /s —— exponential damping rate (§9 "damped, friction 8/s")
-const ACCEL = 40; // u/s² (§9) — caps how fast velocity approaches the target
+const ACCEL = 200; // u/s² (§9) — caps how fast velocity approaches the target
 const Y_MIN = 1.5;
 const Y_MAX = 400;
 const HORIZ_MAX = 700;
