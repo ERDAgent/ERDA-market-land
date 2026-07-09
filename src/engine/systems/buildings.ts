@@ -26,11 +26,12 @@ import { buildDistricts } from '../districts';
 import { scratch } from '../scratch';
 
 const TWEEN_SECS = 0.6;
-// Hover blend factor (unchanged) + phosphor-green target (#aaffaa ~ 0.67,1,0.67).
+// Hover blend factor (unchanged) + white target — hover pops toward white
+// (neutral highlight on red/green buildings).
 const HOVER_WHITEN = 0.15;
-const HOVER_R = 0.67;
+const HOVER_R = 1.0;
 const HOVER_G = 1.0;
-const HOVER_B = 0.67;
+const HOVER_B = 1.0;
 
 export interface BuildingsApi {
   mesh: THREE.InstancedMesh;
@@ -243,8 +244,7 @@ function writeColor(k: number, rgb: [number, number, number]): void {
   colorBuf[k * 3 + 1] = rgb[1];
   colorBuf[k * 3 + 2] = rgb[2];
   if (hoveredIdx === k) {
-    // CRT green-phosphor: hover pops toward bright phosphor green #aaffaa
-    // (~0.67,1.0,0.67) instead of white.
+    // hover pops toward white (neutral highlight on red/green buildings).
     colScratch.setRGB(
       lerp(rgb[0], HOVER_R, HOVER_WHITEN),
       lerp(rgb[1], HOVER_G, HOVER_WHITEN),

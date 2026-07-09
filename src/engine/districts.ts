@@ -7,9 +7,12 @@
 // (clears H_MAX=60). All Three objects are tracked here and disposed on
 // teardown.
 //
-// CRT green-phosphor restyle: slabs take a dark-green tint of the frozen
-// city.ts base color (subtle/dark — slabs are background) via a green multiply;
-// name sprite text renders in phosphor green (emoji stays colorful — color-emoji
+// CRT restyle (K1): slabs read as a 50% transparent green fill with a thick
+// solid green outline via ONE shared CanvasTexture (square canvas: 50% green
+// fill across the face + a thick opaque green border ring drawn on top) applied
+// as a flat MeshBasicMaterial (transparent, depthWrite:false) so the
+// ground/grid is faintly visible through the center. Name sprite text renders
+// in WHITE (Admiral authorized white titles; emoji stays colorful — color-emoji
 // fonts ignore fillStyle, the one splash of life on the mono CRT).
 //
 // NOT a per-frame system (no update). Pure construction + disposal helper.
@@ -58,10 +61,10 @@ function makeNameTexture(emoji: string, name: string): THREE.CanvasTexture {
   g.fillStyle = '#7dff8a';
   g.fillText(emoji, c.width / 2, c.height * 0.30);
 
-  // Line 2 — name (uppercase). Real font stack — phosphor green (emoji above
-  // stays colorful via color-emoji font, which ignores fillStyle).
+  // Line 2 — name (uppercase). Real font stack — WHITE title text (K1; emoji
+  // above stays colorful via color-emoji font, which ignores fillStyle).
   g.font = '700 80px "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
-  g.fillStyle = '#5dff7a';
+  g.fillStyle = '#ffffff';
   g.fillText(name.toUpperCase(), c.width / 2, c.height * 0.72);
 
   const tex = new THREE.CanvasTexture(c);
@@ -79,16 +82,21 @@ export function buildDistricts(scene: THREE.Scene): DistrictOverlay {
   const nameSprites: THREE.Sprite[] = [];
   const nameTextures: THREE.CanvasTexture[] = [];
   const slabGeo = new THREE.BoxGeometry(PLOT, 0.3, PLOT);
+  // ONE shared slab face texture for all 9 slabs: 50% transparent green fill +
+  // a thick opaque green border ring. Built once, disposed once on teardown.
+  const slabTex = makeSlabTexture();
 
   for (const id of Object.keys(DISTRICTS) as DistrictId[]) {
     const def = DISTRICTS[id];
     const [cx, , cz] = plotCenter(def.col, def.row);
-    // CRT green-phosphor: slabs take a dark-green tint of the frozen
-    // city.ts base color (subtle/dark — slabs are background). We multiply the
-    // existing def.color by a green vector so a faint per-district variation
-    // survives but the whole slab family reads green on the mono CRT.
-    const slabColor = new THREE.Color(def.color).multiply(new THREE.Color(0x4a8a5a));
-    const mat = new THREE.MeshLambertMaterial({ color: slabColor });
+    // CRT (K1): flat green-tinted slab — 50% transparent green fill + thick
+    // solid green outline via the shared canvas texture. MeshBasicMaterial so
+    // it reads as a flat emissive CRT fill (ignores scene lights).
+    const mat = new THREE.MeshBasicMaterial({
+      map: slabTex,
+      transparent: true,
+      depthWrite: false,
+    });
     const slab = new THREE.Mesh(slabGeo, mat);
     slab.position.set(cx, 0.15, cz);
     slab.name = `district-slab:${id}`;
@@ -121,6 +129,35 @@ export function buildDistricts(scene: THREE.Scene): DistrictOverlay {
       slabs.forEach((s) => (s.material as THREE.Material).dispose());
       nameSprites.forEach((s) => (s.material as THREE.SpriteMaterial).dispose());
       nameTextures.forEach((t) => t.dispose());
+      slabTex.dispose();
     },
   };
+}
+
+/** Shared square slab face texture: 50% transparent green fill + thick opaque green border ring. */
+function makeSlabTexture(): THREE.CanvasTexture {
+  const SIZE = 256;
+  const BORDER = 12; // thick frame on the 256px square (visibly "thick")
+  const c = document.createElement('canvas');
+  c.width = SIZE;
+  c.height = SIZE;
+  const g = c.getContext('2d')!;
+  g.clearRect(0, 0, SIZE, SIZE);
+  // Interior: 50% transparent phosphor-green fill across the whole square
+  // (ground/grid faintly visible through it via the transparent material).
+  g.fillStyle = 'rgba(46, 255, 122, 0.5)';
+  g.fillRect(0, 0, SIZE, SIZE);
+  // Thick opaque green border ring inset from the edge so the perimeter reads
+  // solid green while the center stays 50% see-through.
+  g.fillStyle = '#2eff7a';
+  // Top & bottom strips.
+  g.fillRect(0, 0, SIZE, BORDER);
+  g.fillRect(0, SIZE - BORDER, SIZE, BORDER);
+  // Left & right strips.
+  g.fillRect(0, 0, BORDER, SIZE);
+  g.fillRect(SIZE - BORDER, 0, BORDER, SIZE);
+  const tex = new THREE.CanvasTexture(c);
+  tex.anisotropy = 4;
+  tex.needsUpdate = true;
+  return tex;
 }

@@ -105,13 +105,13 @@ describe('§7.3 day-change color', () => {
     rgb[2] / 255,
   ];
 
-  // CRT green-phosphor palette lock: color stops are exactly the phosphor
-  // triples (down dim / neutral mid / up bright) — regression guard so a future
-  // accidental revert to red↔green hue fails fast.
-  it('color stops are exactly the phosphor-green triples', () => {
-    expect([...COLOR_RED]).toEqual([0x1a, 0x4a, 0x20]);
-    expect([...COLOR_NEUTRAL]).toEqual([0x2e, 0x8a, 0x44]);
-    expect([...COLOR_GREEN]).toEqual([0x6a, 0xff, 0x66]);
+  // Dual-color CRT palette lock: color stops are exactly the triples below
+  // (down bright red / neutral dim dark / up bright green) — regression guard
+  // so a future accidental revert fails fast.
+  it('color stops are exactly the dual-color CRT triples', () => {
+    expect([...COLOR_RED]).toEqual([0xff, 0x45, 0x40]);
+    expect([...COLOR_NEUTRAL]).toEqual([0x18, 0x22, 0x18]);
+    expect([...COLOR_GREEN]).toEqual([0x4d, 0xff, 0x66]);
   });
 
   it('+3% → exactly green (acceptance: t=1.0)', () => {
