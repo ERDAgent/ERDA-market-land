@@ -2,10 +2,15 @@
 //
 // Called once from the buildings system setup. Creates, per district, a raised
 // dark-tint ground slab (PLOT×0.3×PLOT) and a large floating district-name
-// sprite (1024×256 canvas, sizeAttenuation, scale 200×50 / ~3.3×
-// (1/3 of I1's 10×) (emoji + name, two-line)) centered over the plot (cx, cz) at y≈140
+// sprite (1024×256 canvas, sizeAttenuation, scale 160×40 / ~2.67×
+// (-20% of I2's 200×50) (emoji + name, two-line)) centered over the plot (cx, cz) at y≈140
 // (clears H_MAX=60). All Three objects are tracked here and disposed on
 // teardown.
+//
+// CRT green-phosphor restyle: slabs take a dark-green tint of the frozen
+// city.ts base color (subtle/dark — slabs are background) via a green multiply;
+// name sprite text renders in phosphor green (emoji stays colorful — color-emoji
+// fonts ignore fillStyle, the one splash of life on the mono CRT).
 //
 // NOT a per-frame system (no update). Pure construction + disposal helper.
 
@@ -41,7 +46,7 @@ function makeNameTexture(emoji: string, name: string): THREE.CanvasTexture {
   g.fillRect(0, 0, c.width, c.height);
   g.textAlign = 'center';
   g.textBaseline = 'middle';
-  g.shadowColor = 'rgba(0,0,0,0.6)';
+  g.shadowColor = 'rgba(0,0,0,0.55)';
   g.shadowBlur = 12;
 
   // Line 1 — emoji. Color-emoji fonts ignore fillStyle (render in full color);
@@ -50,12 +55,13 @@ function makeNameTexture(emoji: string, name: string): THREE.CanvasTexture {
   // the old `'700 112px var(--font)'` was silently falling back to the browser
   // default. Emoji renders via the system emoji font regardless of stack.
   g.font = '100 100px "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
-  g.fillStyle = '#cdd9e6';
+  g.fillStyle = '#7dff8a';
   g.fillText(emoji, c.width / 2, c.height * 0.30);
 
-  // Line 2 — name (uppercase). Real font stack, bluish-grey.
+  // Line 2 — name (uppercase). Real font stack — phosphor green (emoji above
+  // stays colorful via color-emoji font, which ignores fillStyle).
   g.font = '700 80px "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
-  g.fillStyle = '#9fb2c6';
+  g.fillStyle = '#5dff7a';
   g.fillText(name.toUpperCase(), c.width / 2, c.height * 0.72);
 
   const tex = new THREE.CanvasTexture(c);
@@ -77,7 +83,12 @@ export function buildDistricts(scene: THREE.Scene): DistrictOverlay {
   for (const id of Object.keys(DISTRICTS) as DistrictId[]) {
     const def = DISTRICTS[id];
     const [cx, , cz] = plotCenter(def.col, def.row);
-    const mat = new THREE.MeshLambertMaterial({ color: new THREE.Color(def.color) });
+    // CRT green-phosphor: slabs take a dark-green tint of the frozen
+    // city.ts base color (subtle/dark — slabs are background). We multiply the
+    // existing def.color by a green vector so a faint per-district variation
+    // survives but the whole slab family reads green on the mono CRT.
+    const slabColor = new THREE.Color(def.color).multiply(new THREE.Color(0x4a8a5a));
+    const mat = new THREE.MeshLambertMaterial({ color: slabColor });
     const slab = new THREE.Mesh(slabGeo, mat);
     slab.position.set(cx, 0.15, cz);
     slab.name = `district-slab:${id}`;
@@ -94,7 +105,7 @@ export function buildDistricts(scene: THREE.Scene): DistrictOverlay {
       sizeAttenuation: true,
     });
     const sp = new THREE.Sprite(mat2);
-    sp.scale.set(200, 50, 1);
+    sp.scale.set(160, 40, 1);
     sp.position.set(cx, 140, cz);
     sp.name = `district-name:${id}`;
     scene.add(sp);
