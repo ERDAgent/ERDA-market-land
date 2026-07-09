@@ -55,10 +55,12 @@ const systemModules = import.meta.glob('./systems/*.ts', { eager: true }) as Rec
   { default?: EngineSystem } | undefined
 >;
 
-const SCENE_BG = 0x0b0f14;
-const GROUND_COLOR = 0x10161d;
-const GRID_COLOR_CENTER = 0x1d2a3a;
-const GRID_COLOR = 0x152030;
+// CRT green-phosphor restyle: near-black green-tinted background + dark-green
+// ground/grid + phosphor-green center line. Fog/light tints follow below.
+const SCENE_BG = 0x030a04;
+const GROUND_COLOR = 0x06140a;
+const GRID_COLOR_CENTER = 0x1e6b3e;
+const GRID_COLOR = 0x103a22;
 
 class Engine {
   readonly events = new Emitter<EngineEvents>();
@@ -119,9 +121,9 @@ class Engine {
     this.scene.add(grid);
 
     // Lighting.
-    const hemi = new THREE.HemisphereLight(0x8899bb, GROUND_COLOR, 0.9);
+    const hemi = new THREE.HemisphereLight(0x2a7a3a, GROUND_COLOR, 0.7);
     this.scene.add(hemi);
-    const dir = new THREE.DirectionalLight(0xffffff, 0.7);
+    const dir = new THREE.DirectionalLight(0x9bd9a0, 0.55);
     dir.position.set(1 * 300, 2 * 300, 1 * 300);
     this.scene.add(dir);
 

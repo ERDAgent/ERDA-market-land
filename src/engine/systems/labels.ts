@@ -28,8 +28,10 @@ const CW = 256;
 const CH = 128;
 const LOD_INTERVAL_S = 0.25;
 const REPAINT_BUDGET_PER_FRAME = 8;
-const SPRITE_W = 12;
-const SPRITE_H = 6;
+// +20% size (I2 sprite 12×6 → 14.4×7.2). Canvas px sizes unchanged (resolution
+// stays; the label is just 20% larger in-world).
+const SPRITE_W = 14.4;
+const SPRITE_H = 7.2;
 const Y_OFFSET = 4;
 
 interface LabelItem {
@@ -68,34 +70,36 @@ function newCanvasCtx(): CanvasRenderingContext2D {
 function drawFull(c: HTMLCanvasElement, item: LabelItem): void {
   const ctx = c.getContext('2d')!;
   ctx.clearRect(0, 0, CW, CH);
-  // line 1 — ticker (bold 44px)
-  ctx.fillStyle = '#e6edf3';
+  // line 1 — ticker (bold 44px) — bright phosphor green
+  ctx.fillStyle = '#7dff8a';
   ctx.font = '700 44px sans-serif';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
   ctx.fillText(item.ticker, 12, 6);
   const q = item.lastQuote;
   if (!q) return;
-  // §8.3 stale styling: render price in grey + a small "stale" indicator.
+  // §8.3 stale styling: dim green for stale (mono CRT — greyer green).
   const stale = q.stale === true;
-  // line 2 — price (grey when stale)
-  ctx.fillStyle = stale ? '#6b7683' : '#9fb2c6';
+  // line 2 — price (dim phosphor green; stale → darker dim green)
+  ctx.fillStyle = stale ? '#2e6b3e' : '#4dff66';
   ctx.font = '30px sans-serif';
   ctx.fillText(formatPrice(q.price), 12, 56);
-  // line 3 — signed change (green/red; grey when stale)
-  ctx.fillStyle = stale ? '#6b7683' : (q.changePct >= 0 ? '#22c07a' : '#d64550');
+  // line 3 — signed change: green-brightness (up bright phosphor / down dim green;
+  // stale → dim green). Keeps the up/down semantic readable as brighter/dimmer.
+  ctx.fillStyle = stale ? '#2e6b3e' : (q.changePct >= 0 ? '#9bff9b' : '#1a5a2a');
   ctx.fillText(formatChangePct(q.changePct), 12, 92);
-  // stale badge (mirrors the SIM badge slot) so a glance spots stale data.
+  // stale badge (mirrors the SIM badge slot) — dim green on the mono CRT.
   if (stale) {
-    ctx.fillStyle = '#8b8350';
+    ctx.fillStyle = '#2e6b3e';
     ctx.font = '700 22px sans-serif';
     ctx.textAlign = 'right';
     ctx.fillText('stale', CW - 10, 10);
   }
   // SIM badge (stale badge, if rendered above, already used the right-aligned
   // slot; when both apply, SIM wins back the slot — it's the dominant signal).
+  // mid phosphor green accent so SIM still pops.
   if (q.source === 'simulated' && !stale) {
-    ctx.fillStyle = '#4aa8ff';
+    ctx.fillStyle = '#2eff7a';
     ctx.font = '700 22px sans-serif';
     const w = ctx.measureText('SIM').width;
     ctx.textAlign = 'right';
@@ -107,7 +111,7 @@ function drawFull(c: HTMLCanvasElement, item: LabelItem): void {
 function drawTicker(c: HTMLCanvasElement, ticker: string): void {
   const ctx = c.getContext('2d')!;
   ctx.clearRect(0, 0, CW, CH);
-  ctx.fillStyle = '#cdd9e5';
+  ctx.fillStyle = '#6dff7a';
   ctx.font = '700 48px sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';

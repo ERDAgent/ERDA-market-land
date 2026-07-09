@@ -5,7 +5,7 @@
 // the ground. Per-instance arrays: positions, footprints, hCurrent (animated),
 // hStart + tween progress (0.6s ease-out), base color. Heights come from
 // `config/metrics.ts` (mode 1/2/3); colors always day-change. Hover swaps toward
-// white 15% (§8.4 emissive highlight stand-in).
+// bright phosphor green 15% (§8.4 emissive highlight stand-in — CRT green-phosphor).
 //
 // Reads the frozen manifest + layout + the market store (manifest/quotes/metric).
 // The bridge triggers `refresh()` on quote/metric watch. Exposes
@@ -26,7 +26,11 @@ import { buildDistricts } from '../districts';
 import { scratch } from '../scratch';
 
 const TWEEN_SECS = 0.6;
+// Hover blend factor (unchanged) + phosphor-green target (#aaffaa ~ 0.67,1,0.67).
 const HOVER_WHITEN = 0.15;
+const HOVER_R = 0.67;
+const HOVER_G = 1.0;
+const HOVER_B = 0.67;
 
 export interface BuildingsApi {
   mesh: THREE.InstancedMesh;
@@ -239,10 +243,12 @@ function writeColor(k: number, rgb: [number, number, number]): void {
   colorBuf[k * 3 + 1] = rgb[1];
   colorBuf[k * 3 + 2] = rgb[2];
   if (hoveredIdx === k) {
+    // CRT green-phosphor: hover pops toward bright phosphor green #aaffaa
+    // (~0.67,1.0,0.67) instead of white.
     colScratch.setRGB(
-      lerp(rgb[0], 1, HOVER_WHITEN),
-      lerp(rgb[1], 1, HOVER_WHITEN),
-      lerp(rgb[2], 1, HOVER_WHITEN),
+      lerp(rgb[0], HOVER_R, HOVER_WHITEN),
+      lerp(rgb[1], HOVER_G, HOVER_WHITEN),
+      lerp(rgb[2], HOVER_B, HOVER_WHITEN),
     );
   } else {
     colScratch.setRGB(rgb[0], rgb[1], rgb[2]);
@@ -313,9 +319,9 @@ function makeApi(): BuildingsApi {
       hoveredIdx = idx;
       if (idx != null && colorBuf) {
         colScratch.setRGB(
-          lerp(colorBuf[idx * 3], 1, HOVER_WHITEN),
-          lerp(colorBuf[idx * 3 + 1], 1, HOVER_WHITEN),
-          lerp(colorBuf[idx * 3 + 2], 1, HOVER_WHITEN),
+          lerp(colorBuf[idx * 3], HOVER_R, HOVER_WHITEN),
+          lerp(colorBuf[idx * 3 + 1], HOVER_G, HOVER_WHITEN),
+          lerp(colorBuf[idx * 3 + 2], HOVER_B, HOVER_WHITEN),
         );
         mesh.setColorAt(idx, colScratch);
       }
