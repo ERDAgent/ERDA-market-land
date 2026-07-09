@@ -1,6 +1,6 @@
 // src/engine/systems/buildings.ts — §8.2 InstancedMesh city + §7.3 height/color.
 //
-// One `InstancedMesh(unitBox, MeshLambertMaterial, 117)` for ALL cubes. The
+// One `InstancedMesh(unitBox, MeshBasicMaterial, 117)` for ALL cubes. The
 // unit box is translated +0.5 in Y (origin at base) so `scaleY = h` grows from
 // the ground. Per-instance arrays: positions, footprints, hCurrent (animated),
 // hStart + tween progress (0.6s ease-out), base color. Heights come from
@@ -117,7 +117,7 @@ export const buildingsSystem: EngineSystem = {
     // Unit box translated +0.5 (origin at base).
     const geo = new THREE.BoxGeometry(1, 1, 1);
     geo.translate(0, 0.5, 0);
-    const mat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+    const mat = new THREE.MeshBasicMaterial({ color: 0xffffff });
     mesh = new THREE.InstancedMesh(geo, mat, count);
     mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     mesh.name = 'buildings';

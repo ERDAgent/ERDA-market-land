@@ -14,7 +14,7 @@
 // negative), neutral = dim dark midpoint — the SIGN picks hue (red/green),
 // the MAGNITUDE picks brightness, ramping up from a dim neutral toward either
 // bright extreme.
-//   red #ff4540 ← neutral #182218 → green #4dff66, t = clamp(changePct/3, -1, 1);
+//   red #ff3322 ← neutral #182218 → green #33ff44, t = clamp(changePct/3, -1, 1);
 //   |changePct| < 0.05 ⇒ exactly neutral.
 
 import { clamp, mapClamp } from '../utils/mapClamp';
@@ -25,9 +25,9 @@ export const H_MIN = 2;
 export const H_MAX = 60;
 
 /** Color-stop RGB triples (0..255) for the three-stop day-change lerp — dual-color CRT (down bright red / neutral dim / up bright green). */
-export const COLOR_RED = [0xff, 0x45, 0x40] as const;
+export const COLOR_RED = [0xff, 0x33, 0x22] as const;
 export const COLOR_NEUTRAL = [0x18, 0x22, 0x18] as const;
-export const COLOR_GREEN = [0x4d, 0xff, 0x66] as const;
+export const COLOR_GREEN = [0x33, 0xff, 0x44] as const;
 
 /** Small band around 0 % treated as exactly neutral (spec: |changePct|<0.05). */
 export const NEUTRAL_BAND = 0.05;

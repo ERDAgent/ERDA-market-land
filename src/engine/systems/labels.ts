@@ -1,14 +1,19 @@
 // src/engine/systems/labels.ts — §8.3 building labels (LOD + repaint budget).
 //
-// One Sprite per building. Full 3-line texture (256×128): line1 ticker (bold
-// 44px), line2 price (30px), line3 signed changePct (30px — bright green up /
-// bright red down) + SIM badge when source==='simulated'. A cached ticker-only texture (pre-render
-// once per instrument) is used as a fast first-paint placeholder while the
-// full 3-line texture regenerates within the budget. Sprite anchored above
-// the cube at y = hCurrent + 4.
+// One Sprite per building. Full 4-line texture (256×176): line1 ticker (bold
+// 44px, white), line2 price (30px, green), line3 signed changePct (30px —
+// bright green up / bright red down), line4 market cap (26px, white) + SIM
+// badge when source==='simulated'. A cached ticker-only texture (pre-render
+// once per instrument, ticker white) is used as a fast first-paint placeholder
+// while the full 4-line texture regenerates within the budget. Sprite anchored
+// above the cube at y = hCurrent + 4.
+//
+// Color semantics: ticker white, price green, changePct red↔green, mcap white.
+// Price/changePct keep their red/green direction semantics; only the ticker
+// and the new market-cap line are white.
 //
 // LOD by camera distance, evaluated ~4×/s (NOT per frame):
-//   Always visible (full 3-line label at any distance). The hide tier (≥160u
+//   Always visible (full 4-line label at any distance). The hide tier (≥160u
 //   hidden) was removed per Admiral request so every label draws at full
 //   distance — there is no `mode=2` hide tier anymore.
 // Texture regen budget: ≤8 canvases/frame, nearest-first; the lazy first-paint
@@ -21,27 +26,28 @@
 import * as THREE from 'three';
 import type { EngineSystem, EngineContext } from '../core';
 import type { Quote } from '../../net/protocol';
-import { formatPrice, formatChangePct } from '../../utils/format';
+import { formatPrice, formatChangePct, formatMarketCap } from '../../utils/format';
 import { useMarketStore } from '../../stores/market';
 
 const CW = 256;
-const CH = 128;
+const CH = 176; // grew 128→176 to fit the 4th market-cap line
 const LOD_INTERVAL_S = 0.25;
 const REPAINT_BUDGET_PER_FRAME = 8;
-// +20% size (I2 sprite 12×6 → 14.4×7.2). Canvas px sizes unchanged (resolution
-// stays; the label is just 20% larger in-world).
+// +20% width (I2 sprite 12×6 → 14.4 wide; +20% stays). Sprite height tracks
+// the canvas aspect (CH/CW = 176/256) so the taller 4-line canvas maps 1:1.
 const SPRITE_W = 14.4;
-const SPRITE_H = 7.2;
+const SPRITE_H = 14.4 * (CH / CW); // = 9.9
 const Y_OFFSET = 4;
 
 interface LabelItem {
   id: string;
   ticker: string;
+  mcapUSD: number | undefined;
   sprite: THREE.Sprite;
   fullTexture: THREE.CanvasTexture | null;
   fullDirty: boolean;
   tickerTexture: THREE.CanvasTexture | null;
-  lod: 0 | 2; // 0 full 3-line (visible) | 2 hidden — ticker-only tier removed
+  lod: 0 | 2; // 0 full 4-line (visible) | 2 hidden — ticker-only tier removed
   distSq: number;
   lastQuote: Quote | null;
 }
@@ -70,8 +76,8 @@ function newCanvasCtx(): CanvasRenderingContext2D {
 function drawFull(c: HTMLCanvasElement, item: LabelItem): void {
   const ctx = c.getContext('2d')!;
   ctx.clearRect(0, 0, CW, CH);
-  // line 1 — ticker (bold 44px) — bright phosphor green
-  ctx.fillStyle = '#7dff8a';
+  // line 1 — ticker (bold 44px) — white
+  ctx.fillStyle = '#ffffff';
   ctx.font = '700 44px sans-serif';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
@@ -83,16 +89,24 @@ function drawFull(c: HTMLCanvasElement, item: LabelItem): void {
   // line 2 — price (dim phosphor green; stale → darker dim green)
   ctx.fillStyle = stale ? '#2e6b3e' : '#4dff66';
   ctx.font = '30px sans-serif';
-  ctx.fillText(formatPrice(q.price), 12, 56);
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  ctx.fillText(formatPrice(q.price), 12, 62);
   // line 3 — signed change: bright green up / bright red down (stale → dim green).
   // Matches the buildings' red↔green semantic (COLOR_RED / COLOR_GREEN).
   ctx.fillStyle = stale ? '#2e6b3e' : (q.changePct >= 0 ? '#4dff66' : '#ff4540');
-  ctx.fillText(formatChangePct(q.changePct), 12, 92);
+  ctx.fillText(formatChangePct(q.changePct), 12, 100);
+  // line 4 — market cap (26px, white — a value, not a direction). Returns '—'
+  // for null/undefined mcap, the right fallback.
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '26px sans-serif';
+  ctx.fillText(formatMarketCap(item.mcapUSD), 12, 136);
   // stale badge (mirrors the SIM badge slot) — dim green on the mono CRT.
   if (stale) {
     ctx.fillStyle = '#2e6b3e';
     ctx.font = '700 22px sans-serif';
     ctx.textAlign = 'right';
+    ctx.textBaseline = 'top';
     ctx.fillText('stale', CW - 10, 10);
   }
   // SIM badge (stale badge, if rendered above, already used the right-aligned
@@ -103,6 +117,7 @@ function drawFull(c: HTMLCanvasElement, item: LabelItem): void {
     ctx.font = '700 22px sans-serif';
     const w = ctx.measureText('SIM').width;
     ctx.textAlign = 'right';
+    ctx.textBaseline = 'top';
     ctx.fillText('SIM', CW - 10, 10);
     void w;
   }
@@ -111,7 +126,7 @@ function drawFull(c: HTMLCanvasElement, item: LabelItem): void {
 function drawTicker(c: HTMLCanvasElement, ticker: string): void {
   const ctx = c.getContext('2d')!;
   ctx.clearRect(0, 0, CW, CH);
-  ctx.fillStyle = '#6dff7a';
+  ctx.fillStyle = '#ffffff';
   ctx.font = '700 48px sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
@@ -145,6 +160,7 @@ export const labelsSystem: EngineSystem = {
       items.push({
         id: inst.id,
         ticker: inst.ticker,
+        mcapUSD: inst.mcapUSD,
         sprite: sp,
         fullTexture: null,
         fullDirty: false,
@@ -219,10 +235,10 @@ function evaluateLOD(buildings: import('./buildings').BuildingsApi): void {
     const mode = 0;
     if (mode === it.lod) continue; // no change
     it.lod = mode;
-    // mode 0 — full 3-line. Show an existing non-stale full texture
+    // mode 0 — full 4-line. Show an existing non-stale full texture
     // immediately; otherwise drop in the cached ticker-only texture as a
     // fast first-paint placeholder and queue a full repaint (nearest-first,
-    // ≤8/frame) that upgrades it to 3-line detail.
+    // ≤8/frame) that upgrades it to 4-line detail.
     if (it.fullTexture && !it.fullDirty) {
       it.sprite.material.map = it.fullTexture;
       it.sprite.material.needsUpdate = true;
