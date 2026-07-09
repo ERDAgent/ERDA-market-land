@@ -26,15 +26,20 @@ let ranOnce = false;
 export function useEngineBridge(): void {
   if (ranOnce) return;
   ranOnce = true;
-  for (const mod of Object.values(modules)) {
+  const bridges = Object.entries(modules);
+  console.log(`[eml:bridge] running ${bridges.length} bridge installer(s)`);
+  for (const [path, mod] of bridges) {
     const installer = mod?.default;
-    if (typeof installer === 'function') {
-      try {
-        installer(engine);
-      } catch {
-        // A bridge wiring error must never take down the world at start.
-        // The owning phase should make its own failures observable.
-      }
+    if (typeof installer !== 'function') {
+      console.warn(`[eml:bridge] ${path}: no default export (skipped)`);
+      continue;
+    }
+    try {
+      installer(engine);
+      console.log(`[eml:bridge] ✓ ${path}`);
+    } catch (err) {
+      console.error(`[eml:bridge] ✗ ${path} threw during install:`, err);
+      // still continue to other bridges — but now the error is visible
     }
   }
 }
