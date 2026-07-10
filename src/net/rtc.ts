@@ -103,3 +103,28 @@ export function encodeWire(env: unknown): string {
 export function channelOpen(ch: RTCDataChannel | undefined | null): ch is RTCDataChannel {
   return !!ch && ch.readyState === 'open';
 }
+
+/** `RTCStats` shape for a `'local-candidate'` report — not in the bundled
+ *  lib.dom.d.ts (`RTCStatsReport.forEach` values are typed `any`). */
+interface LocalCandidateStats extends RTCStats {
+  candidateType?: 'host' | 'srflx' | 'prflx' | 'relay';
+}
+
+/**
+ * Diagnostic-only, read-only (§NET3): does `pc` have at least one gathered
+ * local `srflx` or `relay` ICE candidate, vs. `host`-only? `host`-only means
+ * no public-IP/relay path was found, so the connection may not survive
+ * differing networks (though it may still work, e.g. same LAN). Never
+ * blocks or alters gathering/negotiation — purely reads `getStats()` after
+ * the fact.
+ */
+export async function hasNonHostCandidate(pc: RTCPeerConnection): Promise<boolean> {
+  const stats = await pc.getStats();
+  let found = false;
+  stats.forEach((report: RTCStats) => {
+    if (report.type !== 'local-candidate') return;
+    const candidateType = (report as LocalCandidateStats).candidateType;
+    if (candidateType === 'srflx' || candidateType === 'relay') found = true;
+  });
+  return found;
+}

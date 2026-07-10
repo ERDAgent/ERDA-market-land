@@ -38,6 +38,19 @@ const pillText = computed(() => {
   return 'Solo';
 });
 
+// §NET3: plain-language reason on hover for the compact pill (kept off the
+// pill's own text — no room there — surfaced via `title` instead).
+const pillTitle = computed<string | undefined>(() => {
+  if (conn.role !== 'guest') return undefined;
+  if (conn.status === 'failed') {
+    return "Couldn't establish a peer-to-peer connection. Strict networks — mobile hotspots, corporate Wi-Fi — can block direct P2P even with a relay in play. Try again, or switch networks.";
+  }
+  if (conn.status === 'disconnected') {
+    return 'Connection dropped. Waiting to see if it recovers on its own.';
+  }
+  return undefined;
+});
+
 const pillClass = computed(() => {
   switch (conn.status) {
     case 'connected': return 'pill green';
@@ -77,6 +90,15 @@ function backToMenu(): void {
   ui.screen = 'menu';
 }
 
+// §NET3: one-click retry from the host-left banner — drop the banner and
+// re-open the Join modal (mirrors `openJoin()`; `SignalingModal`'s guest-mode
+// watch drives a fresh `guestBeginJoin()`), instead of requiring a manual
+// close/reopen.
+function tryAgain(): void {
+  conn.setBanner(null);
+  openJoin();
+}
+
 function closeModal(): void { modalMode.value = null; }
 
 // M5G one-shot handoff: the menu sets `ui.pendingMode` before entering the
@@ -91,7 +113,7 @@ watch(() => ui.pendingMode, (m) => {
 
 <template>
   <div class="topbar">
-    <div :class="pillClass">{{ pillText }}</div>
+    <div :class="pillClass" :title="pillTitle">{{ pillText }}</div>
 
     <div class="actions">
       <button v-if="canInvite" class="btn" @click="openInvite">Invite</button>
@@ -105,9 +127,15 @@ watch(() => ui.pendingMode, (m) => {
     <div v-if="conn.banner === 'host-left'" class="banner-backdrop">
       <div class="banner" role="alert">
         <h2>Host disconnected — data frozen</h2>
-        <p>The host left the room. You can keep exploring on your own.</p>
+        <p>
+          The host left, or the connection dropped and didn't recover. Strict
+          networks — mobile hotspots, corporate Wi‑Fi — can block a direct
+          peer-to-peer link even with a relay in play. Try again, or ask the
+          host to reconnect from a different network.
+        </p>
         <div class="banner-actions">
-          <button class="btn primary" @click="continueSolo">Continue solo</button>
+          <button class="btn primary" @click="tryAgain">Try again</button>
+          <button class="btn" @click="continueSolo">Continue solo</button>
           <button class="btn" @click="backToMenu">Back to menu</button>
         </div>
       </div>
@@ -173,5 +201,5 @@ watch(() => ui.pendingMode, (m) => {
 }
 .banner h2 { margin: 0 0 0.5rem; font-size: 1.15rem; }
 .banner p { margin: 0 0 1.1rem; color: var(--text-dim); font-size: 0.9rem; }
-.banner-actions { display: flex; gap: 0.6rem; justify-content: flex-end; }
+.banner-actions { display: flex; gap: 0.6rem; justify-content: flex-end; flex-wrap: wrap; }
 </style>
