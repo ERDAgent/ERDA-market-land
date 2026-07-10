@@ -27,7 +27,7 @@ import {
 import { decodeSignal, encodeSignal, SignalError } from './signaling';
 import { clampChatText, isChatPayload, isPosPayload, isSysPayload, parseEnv } from './validate';
 import type { HeightMetric } from '../config/metrics';
-import { emitRemotePos, hostInit } from './host';
+import { emitRemotePos, hostInit, RECONNECT_GRACE_MS } from './host';
 import { engine } from '../engine/core';
 import { useConnectionStore } from '../stores/connection';
 import { useChatStore } from '../stores/chat';
@@ -40,6 +40,9 @@ let pos: RTCDataChannel | null = null;
 let selfId = '';
 let pingTimer: number | undefined;
 let posTimer: number | undefined; // unused now (M4 drives cadence); kept for teardown idiom
+// §NET2 bounded-disconnect grace: armed on entering 'disconnected', cleared on
+// recovery/'failed'/teardown. Mirrors host.ts's per-guest reconnectTimer.
+let reconnectTimer: number | undefined;
 
 function parseJson(data: unknown): unknown {
   if (typeof data !== 'string') return null;
@@ -48,6 +51,40 @@ function parseJson(data: unknown): unknown {
 
 function setStatus(s: 'connecting' | 'connected' | 'disconnected' | 'failed'): void {
   useConnectionStore().setStatus(s);
+}
+
+function clearReconnectTimer(): void {
+  if (reconnectTimer !== undefined) { window.clearTimeout(reconnectTimer); reconnectTimer = undefined; }
+}
+
+/** `pc.onconnectionstatechange` (§NET2): 'failed' still tears down immediately
+ *  (unchanged). 'disconnected' arms a `RECONNECT_GRACE_MS` timer instead of
+ *  waiting indefinitely on the browser's own eventual 'failed' transition —
+ *  if still 'disconnected' when it fires, do exactly what 'failed' does.
+ *  Recovering to 'connected' (or a sooner 'failed') cancels the timer. */
+function handleConnectionStateChange(): void {
+  const st = pc?.connectionState;
+  if (st === 'connected') {
+    clearReconnectTimer();
+    setStatus('connected');
+  } else if (st === 'disconnected') {
+    setStatus('disconnected');
+    if (reconnectTimer === undefined) {
+      reconnectTimer = window.setTimeout(() => {
+        reconnectTimer = undefined;
+        if (pc?.connectionState === 'disconnected') {
+          setStatus('failed');
+          onHostGone();
+        }
+      }, RECONNECT_GRACE_MS);
+    }
+  } else if (st === 'failed') {
+    clearReconnectTimer();
+    setStatus('failed');
+    onHostGone();
+  } else {
+    clearReconnectTimer();
+  }
 }
 
 /** Begin the Join flow: create pc + channels (before offer), build the offer code. */
@@ -62,15 +99,7 @@ export async function guestBeginJoin(): Promise<string> {
   rel = ch.rel;
   pos = ch.pos;
   wireChannels();
-  pc.onconnectionstatechange = () => {
-    const st = pc?.connectionState;
-    if (st === 'connected') setStatus('connected');
-    else if (st === 'disconnected') setStatus('disconnected');
-    else if (st === 'failed') {
-      setStatus('failed');
-      onHostGone();
-    }
-  };
+  pc.onconnectionstatechange = handleConnectionStateChange;
   const offer = await pc.createOffer();
   await pc.setLocalDescription(offer);
   await waitForIceGathering(pc);
@@ -249,6 +278,14 @@ export function _dispatchGuestPos(env: Env<'pos'>): void {
 /** Test-only seam: install a fake `pos` channel into the guest module state. */
 export function _testInstallGuestPos(ch: RTCDataChannel | null): void { pos = ch; }
 
+/** Test-only seam: install a fake `pc` (a plain `{ connectionState }` object
+ *  cast by the caller) for the §NET2 bounded-disconnect grace tests. */
+export function _testSetPc(fakePc: RTCPeerConnection | null): void { pc = fakePc; }
+
+/** Test-only seam: drive the module-private `handleConnectionStateChange`
+ *  against whatever `pc` is currently installed (via `_testSetPc`). */
+export function _testFireConnectionStateChange(): void { handleConnectionStateChange(); }
+
 /** Test-only seam: drive the module-private `handleRel` from a test (M5G).
  *  Never call from production paths. */
 export function _testHandleRelEnv(raw: unknown): void { handleRel(raw); }
@@ -330,6 +367,7 @@ export function guestBackToMenu(): void {
 function teardown(): void {
   stopPosStream();
   stopPing();
+  clearReconnectTimer();
   if (rel) { try { rel.close(); } catch { /* */ } rel = null; }
   if (pos) { try { pos.close(); } catch { /* */ } pos = null; }
   if (pc) { try { pc.close(); } catch { /* */ } pc = null; }
