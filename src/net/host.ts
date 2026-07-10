@@ -51,7 +51,21 @@ interface GuestConn {
   rtt: number | undefined;
   chat: ChatRateLimiter;
   posLimiter: PosRateLimiter;
+  /** Bounded-grace timer for a 'disconnected' connectionState (§NET2); armed
+   *  in `handleGuestConnectionState`, cleared on recovery/failed/closed. */
+  reconnectTimer?: number;
 }
+
+// ---- bounded 'disconnected' grace (§NET2) -----------------------------------
+//
+// `connectionState === 'disconnected'` is a normal, often self-healing
+// transient (a NAT keepalive miss, a brief Wi-Fi drop) — don't tear down
+// immediately. But don't wait forever either: the browser's own eventual
+// transition to 'failed' is platform-dependent and can be very slow, or in
+// some cases never fire cleanly. Give a 'disconnected' peer this long to
+// self-heal before treating it as gone (same cleanup as the existing 'failed'
+// path). Defined once here; guest.ts imports it for its own mirrored timer.
+export const RECONNECT_GRACE_MS = 15_000;
 
 /** Local manifest hash (FNV-1a hex of the frozen M0C manifest JSON). */
 export const manifestHash: string = fnv1aHex(JSON.stringify(instruments));
@@ -189,6 +203,30 @@ export function _testInstallGuestChannels(list: Array<{ id: string; pos: RTCData
 
 /** Clear the host's per-guest map (test reset). */
 export function _testClearGuests(): void { guests = new Map<string, GuestConn>(); }
+
+/** Install a bare guest entry (no real pc/channels) for the §NET2 bounded-
+ *  disconnect grace tests — drives `handleGuestConnectionState` directly. */
+export function _testInstallGuestForGrace(id: string): void {
+  guests.set(id, {
+    id,
+    pc: undefined as unknown as RTCPeerConnection,
+    rel: undefined as unknown as RTCDataChannel,
+    pos: undefined as unknown as RTCDataChannel,
+    name: id, color: '',
+    lastPong: 0, pingSendAt: 0, missed: 0, rtt: undefined,
+    chat: new ChatRateLimiter(), posLimiter: new PosRateLimiter(),
+  });
+}
+
+/** Is `id` still present in the host's per-guest map (test seam)? */
+export function _testHasGuest(id: string): boolean { return guests.has(id); }
+
+/** Drive `handleGuestConnectionState` for a test-installed guest with a fake
+ *  `pc` (a plain `{ connectionState }` object cast by the caller). */
+export function _testDriveGuestConnectionState(id: string, pc: RTCPeerConnection): void {
+  const g = guests.get(id);
+  if (g) handleGuestConnectionState(g, pc);
+}
 
 // ---- small send helpers -----------------------------------------------------
 
@@ -382,6 +420,33 @@ function removeGuest(g: GuestConn, reason: 'left' | 'dropped'): void {
   refreshStatus();
 }
 
+/** `pc.onconnectionstatechange` for a host-side guest connection (§NET2):
+ *  'failed'/'closed' drop immediately (unchanged); 'disconnected' arms a
+ *  `RECONNECT_GRACE_MS` timer and only drops if still 'disconnected' when it
+ *  fires — a recovery back to 'connected' (or a sooner 'failed'/'closed')
+ *  cancels the timer first. */
+function handleGuestConnectionState(conn0: GuestConn, pc: RTCPeerConnection): void {
+  const st = pc.connectionState;
+  if (st === 'disconnected') {
+    if (conn0.reconnectTimer === undefined) {
+      conn0.reconnectTimer = window.setTimeout(() => {
+        conn0.reconnectTimer = undefined;
+        if (pc.connectionState === 'disconnected' && conn0.id !== 'pending') {
+          removeGuest(conn0, 'dropped');
+        }
+      }, RECONNECT_GRACE_MS);
+    }
+    return;
+  }
+  if (conn0.reconnectTimer !== undefined) {
+    window.clearTimeout(conn0.reconnectTimer);
+    conn0.reconnectTimer = undefined;
+  }
+  if (st === 'failed' || st === 'closed') {
+    if (conn0.id !== 'pending') removeGuest(conn0, 'dropped');
+  }
+}
+
 function refreshStatus(): void {
   const conn = useConnectionStore();
   if (guests.size === 0) {
@@ -476,11 +541,7 @@ export async function hostReceiveOfferCode(code: string): Promise<string> {
   pc.ondatachannel = (e: RTCDataChannelEvent) => {
     attachChannel(conn0, e.channel);
   };
-  pc.onconnectionstatechange = () => {
-    if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
-      if (conn0.id !== 'pending') removeGuest(conn0, 'dropped');
-    }
-  };
+  pc.onconnectionstatechange = () => handleGuestConnectionState(conn0, pc);
   await pc.setRemoteDescription(offer);
   const answer = await pc.createAnswer();
   await pc.setLocalDescription(answer);
