@@ -17,9 +17,13 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
 
-import { _testSetPc, _testFireConnectionStateChange } from '../src/net/guest';
+import {
+  _testSetPc, _testFireConnectionStateChange, _testInstallGuestRel,
+  _testHandleRelEnv, guestSendShoot,
+} from '../src/net/guest';
 import { RECONNECT_GRACE_MS } from '../src/net/host';
 import { useConnectionStore } from '../src/stores/connection';
+import { engine } from '../src/engine/core';
 
 // `onHostGone` calls `stopPosStream`/`stopPing`, which use `window.clearInterval`;
 // aliasing `window` to `globalThis` lets vitest's faked timers drive both
@@ -104,5 +108,86 @@ describe('§NET2 guest bounded-disconnect grace', () => {
     // the original grace timer, if it were still armed, must not throw or
     // double-apply cleanup once its deadline passes
     expect(() => vi.advanceTimersByTime(RECONNECT_GRACE_MS)).not.toThrow();
+  });
+});
+
+// ---- BULLET1: 'shoot' relay path (guest side) ------------------------------
+//
+// `guestSendShoot` mirrors `guestSendChat` — sends to the host over the
+// reliable `rel` channel. A received `shoot` Env (relayed by the host, from
+// another guest or the host itself) emits `'remoteShoot'` on `engine.events`
+// so this guest's bullets system renders it.
+
+interface FakeRel {
+  readyState: 'open' | 'closed';
+  sent: string[];
+  send(d: string): void;
+}
+
+function fakeRel(): FakeRel {
+  const ch: FakeRel = { readyState: 'open', sent: [], send(d) { ch.sent.push(d); } };
+  return ch;
+}
+
+describe('§BULLET1 guest shoot relay', () => {
+  let remoteShootCalls: unknown[] = [];
+  let unsub: (() => void) | undefined;
+
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    useConnectionStore().reset();
+    _testInstallGuestRel(null);
+    engine.events.clear();
+    remoteShootCalls = [];
+    unsub = engine.events.on('remoteShoot', (p) => { remoteShootCalls.push(p); });
+  });
+
+  afterEach(() => {
+    if (unsub) unsub();
+    _testInstallGuestRel(null);
+  });
+
+  it('guestSendShoot sends a shoot Env to the host over the open rel channel', () => {
+    const rel = fakeRel();
+    _testInstallGuestRel(rel as unknown as RTCDataChannel);
+
+    guestSendShoot([1, 2, 3], [0, 0, -1], 'H');
+
+    expect(rel.sent).toHaveLength(1);
+    const env = JSON.parse(rel.sent[0]) as { t: string; d: { origin: number[]; dir: number[]; hitId?: string } };
+    expect(env.t).toBe('shoot');
+    expect(env.d.origin).toEqual([1, 2, 3]);
+    expect(env.d.hitId).toBe('H');
+  });
+
+  it('guestSendShoot is a safe no-op when the rel channel is not open', () => {
+    _testInstallGuestRel(null);
+    expect(() => guestSendShoot([0, 0, 0], [0, 0, -1])).not.toThrow();
+  });
+
+  it('a received shoot Env emits remoteShoot(from,origin,dir,hitId) for the bullets system', () => {
+    const raw = { v: 1, t: 'shoot', from: 'b', ts: Date.now(), d: { origin: [4, 5, 6], dir: [0, 0, -1], hitId: 'c' } };
+    _testHandleRelEnv(raw);
+
+    expect(remoteShootCalls).toHaveLength(1);
+    const r = remoteShootCalls[0] as { from: string; origin: number[]; dir: number[]; hitId?: string };
+    expect(r.from).toBe('b');
+    expect(r.origin).toEqual([4, 5, 6]);
+    expect(r.hitId).toBe('c');
+  });
+
+  it('a received shoot Env without a hit omits hitId', () => {
+    const raw = { v: 1, t: 'shoot', from: 'b', ts: Date.now(), d: { origin: [0, 0, 0], dir: [0, 0, -1] } };
+    _testHandleRelEnv(raw);
+
+    expect(remoteShootCalls).toHaveLength(1);
+    const r = remoteShootCalls[0] as { hitId?: string };
+    expect(r.hitId).toBeUndefined();
+  });
+
+  it('a malformed shoot Env is ignored (no emit, no throw)', () => {
+    const bad = { v: 1, t: 'shoot', from: 'b', ts: Date.now(), d: { origin: [1, 2], dir: [0, 0, -1] } };
+    expect(() => _testHandleRelEnv(bad)).not.toThrow();
+    expect(remoteShootCalls).toHaveLength(0);
   });
 });

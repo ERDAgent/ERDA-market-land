@@ -87,6 +87,62 @@ export function emitRemotePos(from: string, p: [number, number, number], q: [num
   engine.events.emit('remotePos', { id: from, pos: p, from, p, q } as unknown as { id: string; pos: ArrayLike<number> });
 }
 
+// ---- shoot (BULLET1, additive/pre-authorized wire change) ------------------
+//
+// `shoot` is NOT in `net/validate.ts`'s shared `KNOWN` set — that file is out
+// of this order's scope, so its `parseEnv`/`isKnownMsgType` are left
+// untouched. `parseShootEnv` below mirrors `parseEnv`'s own envelope-shape
+// checks (v/from/ts) + a payload guard, so `shoot` Envs get the same rigor
+// without editing the shared validator. Both host.ts and guest.ts special-case
+// `shoot` with this BEFORE falling through to the shared `parseEnv`.
+
+/** True when `d` is structurally a valid `shoot` payload. */
+export function isShootPayload(d: unknown): d is MsgPayload['shoot'] {
+  if (d === null || typeof d !== 'object') return false;
+  const s = d as { origin?: unknown; dir?: unknown; hitId?: unknown };
+  const isVec3 = (v: unknown): v is [number, number, number] =>
+    Array.isArray(v) && v.length === 3 && v.every((n) => typeof n === 'number' && Number.isFinite(n));
+  if (!isVec3(s.origin) || !isVec3(s.dir)) return false;
+  if (s.hitId !== undefined && typeof s.hitId !== 'string') return false;
+  return true;
+}
+
+/** Parse + shape-check a raw inbound value as a `shoot` Env, or null. */
+export function parseShootEnv(raw: unknown): Env<'shoot'> | null {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const o = raw as Record<string, unknown>;
+  if (o.v !== 1) return null;
+  if (o.t !== 'shoot') return null;
+  if (typeof o.from !== 'string') return null;
+  if (typeof o.ts !== 'number' || !Number.isFinite(o.ts)) return null;
+  if (!isShootPayload(o.d)) return null;
+  return { v: 1, t: 'shoot', from: o.from, ts: o.ts, d: o.d };
+}
+
+/** Emit a received `shoot` Env on `engine.events` as `'remoteShoot'`. */
+export function emitRemoteShoot(
+  from: string,
+  origin: [number, number, number],
+  dir: [number, number, number],
+  hitId?: string,
+): void {
+  engine.events.emit('remoteShoot', { from, origin, dir, hitId });
+}
+
+/** Host posts a fired shot: broadcast to all guests (mirrors `hostSendChat`).
+ *  Used when the HOST fires locally — the host's own local render+sound
+ *  already happened with zero round-trip (bullets.ts), so this only needs to
+ *  fan the shot out; no self-`emitRemoteShoot` here (unlike `pos`, which has
+ *  no other path to reach the host's own avatars system). A no-op broadcast
+ *  when solo/no guests is fine. */
+export function hostSendShoot(
+  origin: [number, number, number],
+  dir: [number, number, number],
+  hitId?: string,
+): void {
+  void broadcastRel(makeEnv('shoot', 'H', { origin, dir, hitId }));
+}
+
 // ---- the M5 cross-phase hooks -----------------------------------------------
 
 /** Wait until a channel's buffered amount drains at/under `threshold`. */
@@ -186,19 +242,30 @@ export function stopLocalPosStream(): void {
 // ---- test-only seams (host's `guests` map is module-private; these let the
 // pos-sender unit test inject fake pos channels + reset between cases) --------
 
-/** Install fake guest pos channels into the host's per-guest map for tests. */
-export function _testInstallGuestChannels(list: Array<{ id: string; pos: RTCDataChannel }>): void {
+/** Install fake guest pos (+ optional rel) channels into the host's per-guest
+ *  map for tests. `rel` is optional so existing pos-only callers are unaffected. */
+export function _testInstallGuestChannels(
+  list: Array<{ id: string; pos: RTCDataChannel; rel?: RTCDataChannel }>,
+): void {
   for (const item of list) {
     guests.set(item.id, {
       id: item.id,
       pc: undefined as unknown as RTCPeerConnection,
-      rel: undefined as unknown as RTCDataChannel,
+      rel: item.rel ?? (undefined as unknown as RTCDataChannel),
       pos: item.pos,
       name: item.id, color: '',
       lastPong: 0, pingSendAt: 0, missed: 0, rtt: undefined,
       chat: new ChatRateLimiter(), posLimiter: new PosRateLimiter(),
     });
   }
+}
+
+/** Drive the module-private `handleRelMessage` for a test-installed guest
+ *  (BULLET1 convention — mirrors guest.ts's `_testHandleRelEnv`). Never call
+ *  from production paths. */
+export function _testHandleGuestRel(id: string, raw: unknown): void {
+  const g = guests.get(id);
+  if (g) handleRelMessage(g, raw);
 }
 
 /** Clear the host's per-guest map (test reset). */
@@ -296,6 +363,20 @@ function quotesSnapshot(): Quote[] {
 // ---- guest message dispatch ------------------------------------------------
 
 function handleRelMessage(g: GuestConn, raw: unknown): void {
+  // `shoot` isn't in validate.ts's shared KNOWN set (see the section above) —
+  // check it first, then fall through to the shared `parseEnv` for everything
+  // else.
+  const shootEnv = parseShootEnv(raw);
+  if (shootEnv) {
+    const d = shootEnv.d;
+    emitRemoteShoot(g.id, d.origin, d.dir, d.hitId);
+    // relay to other guests (host does NOT echo to sender) — mirrors 'pos'.
+    const relay = makeEnv('shoot', g.id, { origin: d.origin, dir: d.dir, hitId: d.hitId });
+    for (const og of guests.values()) {
+      if (og.id !== g.id) sendRel(og, relay);
+    }
+    return;
+  }
   const env = parseEnv(raw);
   if (!env) return; // unknown t / bad shape ⇒ ignore
   const now = Date.now();

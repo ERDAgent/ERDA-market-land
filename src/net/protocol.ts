@@ -87,7 +87,10 @@ export interface Instrument {
 // §4.5 — wire envelope + per-message payloads
 // ---------------------------------------------------------------------------
 
-/** Discriminator for the `Env.t` field. `pos` rides the unreliable channel. */
+/** Discriminator for the `Env.t` field. `pos` rides the unreliable channel.
+ *  `shoot` (BULLET1, §-none — additive, pre-authorized) rides the RELIABLE
+ *  channel: a fired shot is infrequent and every peer must agree on hit/miss,
+ *  unlike `pos`'s high-rate best-effort stream. */
 export type MsgType =
   | 'hello'
   | 'welcome'
@@ -102,7 +105,8 @@ export type MsgType =
   | 'pong'
   | 'error'
   | 'bye'
-  | 'pos';
+  | 'pos'
+  | 'shoot';
 
 /** Reliable-channel payloads (hello … bye) + the unreliable `pos` payload. */
 export interface MsgPayload {
@@ -130,6 +134,14 @@ export interface MsgPayload {
   error: { code: string; msg: string };
   bye: Record<string, never>;
   pos: { p: [number, number, number]; q: [number, number, number, number] };
+  /** A fired cosmetic bullet (BULLET1): world-space origin + normalized aim
+   *  direction the shot was fired from, and — when it registered a hit — the
+   *  target peer id (rides the reliable channel, so every peer agrees). */
+  shoot: {
+    origin: [number, number, number];
+    dir: [number, number, number];
+    hitId?: string;
+  };
 }
 
 /**
