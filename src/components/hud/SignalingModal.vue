@@ -13,7 +13,7 @@ import { useConnectionStore } from '../../stores/connection';
 import { useSettingsStore } from '../../stores/settings';
 import { useUiStore } from '../../stores/ui';
 import { useClipboard } from '../../composables/useClipboard';
-import { SignalError, signalErrorMessage } from '../../net/signaling';
+import { SignalError, decodeSignal, signalErrorMessage } from '../../net/signaling';
 import { hostInit, hostReceiveOfferCode, hostSendChat } from '../../net/host';
 import { guestApplyReply, guestBeginJoin } from '../../net/guest';
 
@@ -28,6 +28,10 @@ const cb = useClipboard();
 const pasteBuf = ref<string>('');
 const busy = ref<boolean>(false);
 const localErr = ref<string | null>(null);
+// §NET3: honest heads-up when only `host`-type ICE candidates were gathered
+// (no srflx/relay) — cheap re-read of the already-gathered candidates
+// embedded in our own just-generated code, no extra ICE gathering.
+const noRelayHint = ref<boolean>(false);
 
 const codeToShow = computed<string | null>(() =>
   props.mode === 'guest' ? conn.offerCode : conn.replyCode,
@@ -55,11 +59,30 @@ function showErr(e: unknown): void {
   conn.setError(localErr.value);
 }
 
+/** True when `sdp` carries no `srflx`/`relay` candidate line (host-only). */
+function sdpHasOnlyHostCandidates(sdp: string): boolean {
+  return sdp.includes('a=candidate:') && !/ typ (srflx|relay)\b/.test(sdp);
+}
+
+/** Re-decode our own just-generated code to inspect its already-gathered ICE
+ *  candidates (§NET3). Best-effort/advisory only — a decode failure here
+ *  just skips the hint, since the code itself was already validated when it
+ *  was produced. */
+async function checkNoRelayHint(code: string | null): Promise<void> {
+  noRelayHint.value = false;
+  if (!code) return;
+  try {
+    const desc = await decodeSignal(code);
+    noRelayHint.value = sdpHasOnlyHostCandidates(desc.sdp ?? '');
+  } catch { /* advisory only */ }
+}
+
 async function onGuestApplied(): Promise<void> {
   if (props.mode !== 'guest') return;
   busy.value = true;
   try {
     await guestBeginJoin();
+    await checkNoRelayHint(conn.offerCode);
   } catch (e) {
     showErr(e);
   } finally {
@@ -96,8 +119,9 @@ async function onHostPasteJoin(): Promise<void> {
   if (!pasteBuf.value.trim()) return;
   busy.value = true;
   try {
-    await hostReceiveOfferCode(pasteBuf.value);
+    const reply = await hostReceiveOfferCode(pasteBuf.value);
     pasteBuf.value = '';
+    await checkNoRelayHint(reply);
   } catch (e) {
     showErr(e);
   } finally {
@@ -125,6 +149,7 @@ watch(
     }
     localErr.value = null;
     pasteBuf.value = '';
+    noRelayHint.value = false;
   },
   { immediate: true },
 );
@@ -163,6 +188,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown));
             <button class="primary" @click="onCopyCode">Copy code</button>
             <span v-if="cb.showFallback.value" class="hint">Copy manually (Ctrl/Cmd‑C) — clipboard blocked.</span>
           </div>
+          <div v-if="noRelayHint" class="advisory">No relay or public-IP path found — this connection may not work across different networks.</div>
         </section>
 
         <!-- GUEST: paste the host's reply -->
@@ -204,6 +230,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown));
             <button class="primary" @click="onCopyCode">Copy reply</button>
             <span v-if="cb.showFallback.value" class="hint">Copy manually (Ctrl/Cmd‑C).</span>
           </div>
+          <div v-if="noRelayHint" class="advisory">No relay or public-IP path found — this connection may not work across different networks.</div>
         </section>
 
         <div v-if="localErr" class="err">⚠ {{ localErr }}</div>
@@ -266,6 +293,7 @@ label { display: block; font-size: 0.82rem; color: var(--text-dim); margin-botto
 .primary:hover:not(:disabled) { background: var(--accent-hover); }
 .ghost { background: transparent; color: var(--text); border: 1px solid var(--panel-border); border-radius: 8px; padding: 0.5rem 0.9rem; }
 .err { color: var(--danger); font-size: 0.84rem; margin: 0.4rem 0; }
+.advisory { color: #fbbf24; font-size: 0.78rem; margin-top: 0.5rem; }
 .ok { color: #4ade80; font-size: 0.92rem; margin: 0.4rem 0; font-weight: 600; }
 .foot { padding: 0.7rem 1.1rem 1rem; display: flex; justify-content: flex-end; }
 </style>

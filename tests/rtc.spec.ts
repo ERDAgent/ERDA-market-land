@@ -6,7 +6,7 @@
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
 
-import { makeRtcConfig, waitForIceGathering } from '../src/net/rtc';
+import { hasNonHostCandidate, makeRtcConfig, waitForIceGathering } from '../src/net/rtc';
 
 describe('makeRtcConfig (§4.2/§4.3)', () => {
   it('lanOnly ⇒ no ICE servers at all', () => {
@@ -89,5 +89,57 @@ describe('waitForIceGathering', () => {
 
     await vi.advanceTimersByTimeAsync(3000); // now past 7000ms total
     expect(resolved).toBe(true);
+  });
+});
+
+/** Fake `getStats()` report: enough of `RTCStats` + `candidateType` for
+ *  `hasNonHostCandidate` to read. */
+type FakeReport = { type: string; candidateType?: string };
+
+/** Fake `RTCStatsReport`: just the `forEach` shape `hasNonHostCandidate` uses. */
+function fakeStatsReport(reports: FakeReport[]): { forEach: (cb: (r: FakeReport) => void) => void } {
+  return { forEach: (cb) => reports.forEach(cb) };
+}
+
+function fakePcWithReports(reports: FakeReport[]): RTCPeerConnection {
+  return {
+    getStats: () => Promise.resolve(fakeStatsReport(reports)),
+  } as unknown as RTCPeerConnection;
+}
+
+describe('hasNonHostCandidate (§NET3 diagnostic-only helper)', () => {
+  it('false when only host candidates were gathered', async () => {
+    const pc = fakePcWithReports([
+      { type: 'local-candidate', candidateType: 'host' },
+      { type: 'local-candidate', candidateType: 'host' },
+      { type: 'remote-candidate', candidateType: 'host' },
+    ]);
+    await expect(hasNonHostCandidate(pc)).resolves.toBe(false);
+  });
+
+  it('true when a srflx local candidate was gathered', async () => {
+    const pc = fakePcWithReports([
+      { type: 'local-candidate', candidateType: 'host' },
+      { type: 'local-candidate', candidateType: 'srflx' },
+    ]);
+    await expect(hasNonHostCandidate(pc)).resolves.toBe(true);
+  });
+
+  it('true when a relay local candidate was gathered', async () => {
+    const pc = fakePcWithReports([{ type: 'local-candidate', candidateType: 'relay' }]);
+    await expect(hasNonHostCandidate(pc)).resolves.toBe(true);
+  });
+
+  it('ignores non-"local-candidate" report types (e.g. remote-candidate srflx)', async () => {
+    const pc = fakePcWithReports([
+      { type: 'remote-candidate', candidateType: 'srflx' },
+      { type: 'candidate-pair' },
+    ]);
+    await expect(hasNonHostCandidate(pc)).resolves.toBe(false);
+  });
+
+  it('false when no candidates were reported at all', async () => {
+    const pc = fakePcWithReports([]);
+    await expect(hasNonHostCandidate(pc)).resolves.toBe(false);
   });
 });
