@@ -25,8 +25,35 @@ export const CH_REL = 'rel';
 export const CH_POS = 'pos';
 
 // ----- ICE (§4.3) -----
-/** Public STUN server; empty array at runtime when LAN-only. */
+/** Public STUN server (kept for the frozen contracts test); also the first
+ *  entry of `ICE_SERVERS` below. */
 export const STUN_URL = 'stun:stun.l.google.com:19302';
+
+// Public STUN + TURN servers; empty array at runtime when LAN-only.
+//
+// STUN alone cannot traverse symmetric NAT / CGNAT (common on home and mobile
+// ISPs) — two peers not on the same LAN behind such a NAT fail to connect at
+// all with STUN-only ICE. TWO independent STUN providers are listed for
+// redundancy (if one is blocked/unreachable on a given network, the other
+// still yields server-reflexive candidates), plus a TURN relay as the
+// fallback of last resort when no direct/srflx path works.
+//
+// The TURN entry is the Open Relay Project (Metered.ca) free demo server —
+// no signup, but rate-limited and NOT meant for heavy production load. Swap
+// in a dedicated TURN server here (single place) when available.
+export const ICE_SERVERS: RTCIceServer[] = [
+  { urls: STUN_URL },
+  { urls: 'stun:stun.cloudflare.com:3478' },
+  {
+    urls: [
+      'turn:openrelay.metered.ca:80',
+      'turn:openrelay.metered.ca:443',
+      'turn:openrelay.metered.ca:443?transport=tcp',
+    ],
+    username: 'openrelayproject',
+    credential: 'openrelayproject',
+  },
+];
 
 // ----- Cadences (§4.5/§5) -----
 /** Local avatar position broadcast rate. */
