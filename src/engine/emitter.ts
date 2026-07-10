@@ -14,6 +14,15 @@ export interface EngineEvents {
   requestPointerLockFailed: undefined;
   /** A remote peer position arrived (M3 emits; M4 consumes). */
   remotePos: { id: string; pos: ArrayLike<number> };
+  /** A peer fired a cosmetic bullet (BULLET1: net/host.ts + net/guest.ts emit;
+   *  engine/systems/bullets.ts consumes). `hitId` is set when the shot
+   *  registered a hit — the same id for every peer, since it rides the wire. */
+  remoteShoot: {
+    from: string;
+    origin: [number, number, number];
+    dir: [number, number, number];
+    hitId?: string;
+  };
   /** Open-ended: future phases append keys via declaration merging. */
   [key: string]: unknown;
 }

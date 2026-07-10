@@ -19,7 +19,11 @@ import {
   ChatRateLimiter,
   PosRateLimiter,
 } from '../src/net/validate';
-import { broadcastRel, bufferedAmountLow } from '../src/net/host';
+import {
+  broadcastRel, bufferedAmountLow, emitRemoteShoot, hostSendShoot,
+  isShootPayload, parseShootEnv,
+} from '../src/net/host';
+import { guestSendShoot } from '../src/net/guest';
 import { CHAT_MAX_CHARS, CHAT_RATE, POS_RX_MAX_HZ } from '../src/config/net';
 
 describe('net/validate — shape, clamp, rate-limit, unknown-t (§4.5)', () => {
@@ -165,5 +169,41 @@ describe('M3 cross-phase hooks on net/host.ts (order §cross-phase hooks)', () =
   });
   it('bufferedAmountLow is a function (M5 quotes-broadcast bridge consumes it)', () => {
     expect(typeof bufferedAmountLow).toBe('function');
+  });
+});
+
+describe('BULLET1 shoot wire shape (additive, pre-authorized MsgType)', () => {
+  it('hostSendShoot / guestSendShoot / emitRemoteShoot are exported functions', () => {
+    expect(typeof hostSendShoot).toBe('function');
+    expect(typeof guestSendShoot).toBe('function');
+    expect(typeof emitRemoteShoot).toBe('function');
+  });
+
+  describe('isShootPayload', () => {
+    it('accepts origin/dir triples with an optional hitId', () => {
+      expect(isShootPayload({ origin: [0, 0, 0], dir: [0, 0, -1] })).toBe(true);
+      expect(isShootPayload({ origin: [0, 0, 0], dir: [0, 0, -1], hitId: 'a' })).toBe(true);
+    });
+    it('rejects a wrong-length vector, non-finite numbers, or a non-string hitId', () => {
+      expect(isShootPayload({ origin: [0, 0], dir: [0, 0, -1] })).toBe(false);
+      expect(isShootPayload({ origin: [0, 0, NaN], dir: [0, 0, -1] })).toBe(false);
+      expect(isShootPayload({ origin: [0, 0, 0], dir: [0, 0, -1], hitId: 5 })).toBe(false);
+      expect(isShootPayload({})).toBe(false);
+      expect(isShootPayload(null)).toBe(false);
+    });
+  });
+
+  describe('parseShootEnv', () => {
+    it('parses a well-formed shoot envelope', () => {
+      const env = parseShootEnv({ v: 1, t: 'shoot', from: 'p', ts: 5, d: { origin: [1, 2, 3], dir: [0, 0, -1] } });
+      expect(env).not.toBeNull();
+      expect(env!.d.origin).toEqual([1, 2, 3]);
+    });
+    it('rejects a non-shoot t, bad envelope shape, or bad payload', () => {
+      expect(parseShootEnv({ v: 1, t: 'chat', from: 'p', ts: 5, d: { text: 'hi' } })).toBeNull();
+      expect(parseShootEnv({ v: 2, t: 'shoot', from: 'p', ts: 5, d: { origin: [0, 0, 0], dir: [0, 0, -1] } })).toBeNull();
+      expect(parseShootEnv({ v: 1, t: 'shoot', from: 'p', ts: 5, d: { origin: [0, 0], dir: [0, 0, -1] } })).toBeNull();
+      expect(parseShootEnv(null)).toBeNull();
+    });
   });
 });

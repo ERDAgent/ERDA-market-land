@@ -27,7 +27,7 @@ import {
 import { decodeSignal, encodeSignal, SignalError } from './signaling';
 import { clampChatText, isChatPayload, isPosPayload, isSysPayload, parseEnv } from './validate';
 import type { HeightMetric } from '../config/metrics';
-import { emitRemotePos, hostInit, RECONNECT_GRACE_MS } from './host';
+import { emitRemotePos, emitRemoteShoot, hostInit, parseShootEnv, RECONNECT_GRACE_MS } from './host';
 import { engine } from '../engine/core';
 import { useConnectionStore } from '../stores/connection';
 import { useChatStore } from '../stores/chat';
@@ -136,6 +136,14 @@ function sendRel(env: Env): void {
 }
 
 function handleRel(raw: unknown): void {
+  // `shoot` isn't in validate.ts's shared KNOWN set (see net/host.ts's BULLET1
+  // section) — check it first, then fall through to the shared `parseEnv`.
+  const shootEnv = parseShootEnv(raw);
+  if (shootEnv) {
+    const d = shootEnv.d;
+    emitRemoteShoot(shootEnv.from, d.origin, d.dir, d.hitId);
+    return;
+  }
   const env = parseEnv(raw);
   if (!env) return;
   const conn = useConnectionStore();
@@ -323,6 +331,21 @@ export function guestSendChat(text: string): void {
   if (!channelOpen(rel)) return; // host will echo; nothing to send yet
   sendRel(makeEnv('chat', selfId, { text: t }));
 }
+
+/** Guest posts a fired shot to the host (host relays to all other guests;
+ *  mirrors `guestSendChat`). */
+export function guestSendShoot(
+  origin: [number, number, number],
+  dir: [number, number, number],
+  hitId?: string,
+): void {
+  if (!channelOpen(rel)) return;
+  sendRel(makeEnv('shoot', selfId, { origin, dir, hitId }));
+}
+
+/** Test-only seam: install a fake `rel` channel into the guest module state
+ *  (BULLET1 convention — mirrors `_testInstallGuestPos`). */
+export function _testInstallGuestRel(ch: RTCDataChannel | null): void { rel = ch; }
 
 /** Apply the host's reply code (Join flow step 2): set the remote answer. */
 export async function guestApplyReply(code: string): Promise<void> {

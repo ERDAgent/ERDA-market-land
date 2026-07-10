@@ -73,6 +73,8 @@ interface Avatar {
   haveNewer: boolean;
   haveOlder: boolean;
   opacity: number;         // current (ramped toward target at 1/s)
+  baseColor: THREE.Color;  // hue color the cone returns to once a flash ends
+  flashUntil: number;      // performance.now() deadline; 0 when not flashing
 }
 
 export interface AvatarsApi {
@@ -82,6 +84,13 @@ export interface AvatarsApi {
   pushSnapshot(id: string, p: [number, number, number], q: [number, number, number, number]): void;
   /** Live avatar count (non-self). */
   count(): number;
+  /** Read-only snapshot of every live avatar's current interpolated world
+   *  position, for hit-testing (BULLET1). Small per-call allocation — only
+   *  runs on a fire event, not every frame. */
+  listTargets(): Array<{ id: string; position: THREE.Vector3 }>;
+  /** Brief flash/color pulse on `id`'s cone (BULLET1 hit feedback) — visible
+   *  to every OTHER peer rendering that avatar; a no-op if `id` isn't live. */
+  flashHit(id: string): void;
   /** Drop everything (teardown / test reset). */
   reset(): void;
   /** Sender cadence used by the bridge (Hz) — surfaced for the debug overlay. */
@@ -117,6 +126,9 @@ const STALL_OPACITY = 0.4;
 const STALL_RAMP_S = 1;
 const HUE_S = 0.7;
 const HUE_L = 0.62;
+
+const FLASH_MS = 220;      // BULLET1 hit-flash duration
+const FLASH_COLOR = new THREE.Color(0xffffff);
 
 // ---- deterministic HSL from id (mirrors `stores/players.colorFromId`) --------
 
@@ -179,11 +191,12 @@ function roundedPill(ctx: CanvasRenderingContext2D, x: number, y: number, w: num
 
 function createAvatar(meta: PeerMeta): Avatar {
   const hue = hueFromId(meta.id);
+  const baseColor = new THREE.Color().setHSL(hue, HUE_S, HUE_L);
 
   const coneGeo = new THREE.ConeGeometry(CONE_R, CONE_H, 18);
   coneGeo.rotateX(-Math.PI / 2); // tip → −z (view direction)
   const coneMat = new THREE.MeshLambertMaterial({
-    color: new THREE.Color().setHSL(hue, HUE_S, HUE_L),
+    color: baseColor.clone(),
     transparent: true,
     opacity: 1,
   });
@@ -233,6 +246,8 @@ function createAvatar(meta: PeerMeta): Avatar {
     haveNewer: false,
     haveOlder: false,
     opacity: 1,
+    baseColor,
+    flashUntil: 0,
   };
 }
 
@@ -316,6 +331,20 @@ function reset(): void {
   avatars.clear();
 }
 
+// ---- BULLET1 hit-test + hit-feedback seams ----------------------------------
+
+function listTargets(): Array<{ id: string; position: THREE.Vector3 }> {
+  const out: Array<{ id: string; position: THREE.Vector3 }> = [];
+  for (const a of avatars.values()) out.push({ id: a.id, position: a.group.position.clone() });
+  return out;
+}
+
+function flashHit(id: string): void {
+  const a = avatars.get(id);
+  if (!a) return;
+  a.flashUntil = performance.now() + FLASH_MS;
+}
+
 // ---- the system ------------------------------------------------------------
 
 export const avatarsSystem: EngineSystem = {
@@ -329,6 +358,8 @@ export const avatarsSystem: EngineSystem = {
       syncAvatars,
       pushSnapshot,
       count: () => avatars.size,
+      listTargets,
+      flashHit,
       reset,
       posHz: () => bridgePosHz,
       setPosHz: (hz: number) => { bridgePosHz = hz; },
@@ -356,6 +387,14 @@ export const avatarsSystem: EngineSystem = {
       }
       a.coneMat.opacity = a.opacity;
       a.tagMat.opacity = a.opacity;
+
+      // --- BULLET1 hit-flash (white pulse, decays back to baseColor) ------
+      const flashRemain = a.flashUntil - now;
+      if (flashRemain > 0) {
+        a.coneMat.color.copy(a.baseColor).lerp(FLASH_COLOR, flashRemain / FLASH_MS);
+      } else if (!a.coneMat.color.equals(a.baseColor)) {
+        a.coneMat.color.copy(a.baseColor);
+      }
 
       // --- position / orientation -----------------------------------------
       const interp =
